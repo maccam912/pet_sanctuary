@@ -1,0 +1,165 @@
+name: Build and release
+
+# Every commit to main: run the tests, export Android + desktop builds,
+# and publish them as a GitHub release.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: "4.7"
+  GODOT_STATUS: stable
+  BUILD_NAME: build-${{ github.run_number }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Cache Godot and export templates
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-${{ env.GODOT_STATUS }}
+
+      - name: Download Godot and export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_STATUS}"
+          name="Godot_v${GODOT_VERSION}-${GODOT_STATUS}"
+          mkdir -p ~/godot ~/.local/share/godot/export_templates
+          curl -fsSL -o /tmp/godot.zip "${base}/${name}_linux.x86_64.zip"
+          curl -fsSL -o /tmp/templates.zip "${base}/${name}_export_templates.tpz"
+          unzip -q /tmp/godot.zip -d ~/godot
+          mv ~/godot/${name}_linux.x86_64 ~/godot/godot
+          unzip -q /tmp/templates.zip -d /tmp/templates
+          mv /tmp/templates/templates ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}
+
+      - name: Put Godot on the PATH
+        run: |
+          chmod +x ~/godot/godot
+          echo "$HOME/godot" >> "$GITHUB_PATH"
+
+      - name: Point Godot at the Java and Android SDKs
+        run: |
+          mkdir -p ~/.config/godot
+          cat > ~/.config/godot/editor_settings-${GODOT_VERSION}.tres <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/java_sdk_path = "${JAVA_HOME}"
+          export/android/android_sdk_path = "${ANDROID_HOME}"
+          EOF
+
+      - name: Import assets
+        run: godot --headless --import
+
+      - name: Unit tests
+        run: godot --headless -s tests/run_tests.gd
+
+      - name: End-to-end smoke test
+        timeout-minutes: 10
+        run: |
+          godot --headless -- --autopilot 2>&1 | tee /tmp/autopilot.log
+          grep -q "AUTOPILOT OK" /tmp/autopilot.log
+
+      - name: Stamp the build number
+        run: |
+          sed -i "s|^version/code=.*|version/code=${{ github.run_number }}|" export_presets.cfg
+          sed -i "s|^version/name=.*|version/name=\"1.0.${{ github.run_number }}\"|" export_presets.cfg
+          sed -i "s|^application/short_version=.*|application/short_version=\"1.0.${{ github.run_number }}\"|" export_presets.cfg
+          sed -i "s|^application/version=.*|application/version=\"1.0.${{ github.run_number }}\"|" export_presets.cfg
+
+      - name: Export Android APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            # The same signing key every build, so a new APK installs over the
+            # old one and keeps the save files.
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          else
+            # No signing secrets set: sign with a throwaway key. The APK works,
+            # but it cannot install over a build signed with a different key.
+            echo "::warning::ANDROID_KEYSTORE_* secrets are not set; signing the APK with a throwaway key."
+            export GODOT_ANDROID_KEYSTORE_RELEASE_USER=throwaway
+            export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=throwaway
+            keytool -genkeypair -keystore "$RUNNER_TEMP/release.keystore" -alias throwaway \
+              -keyalg RSA -keysize 2048 -validity 10000 -storepass throwaway -keypass throwaway \
+              -dname "CN=Sunny Paws CI"
+          fi
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$RUNNER_TEMP/release.keystore"
+          mkdir -p build/android dist
+          godot --headless --export-release "Android" build/android/SunnyPaws.apk
+          cp build/android/SunnyPaws.apk "dist/SunnyPaws-${BUILD_NAME}-android.apk"
+          rm -f "$RUNNER_TEMP/release.keystore"
+
+      - name: Export Windows
+        run: |
+          mkdir -p build/windows
+          godot --headless --export-release "Windows" build/windows/SunnyPaws.exe
+          (cd build/windows && zip -q -r "../../dist/SunnyPaws-${BUILD_NAME}-windows.zip" .)
+
+      - name: Export Linux
+        run: |
+          mkdir -p build/linux
+          godot --headless --export-release "Linux" build/linux/SunnyPaws.x86_64
+          chmod +x build/linux/SunnyPaws.x86_64
+          tar -czf "dist/SunnyPaws-${BUILD_NAME}-linux.tar.gz" -C build/linux .
+
+      - name: Export macOS
+        run: |
+          mkdir -p build/macos
+          godot --headless --export-release "macOS" build/macos/SunnyPaws-macOS.zip
+          cp build/macos/SunnyPaws-macOS.zip "dist/SunnyPaws-${BUILD_NAME}-macos.zip"
+
+      - name: Check the builds exist
+        run: |
+          ls -la dist
+          for f in android.apk windows.zip linux.tar.gz macos.zip; do
+            test -s "dist/SunnyPaws-${BUILD_NAME}-${f}"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SunnyPaws-${{ env.BUILD_NAME }}
+          path: dist/*
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.BUILD_NAME }}
+          name: Sunny Paws ${{ env.BUILD_NAME }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: dist/*
+          body: |
+            Automatic build of commit ${{ github.sha }}.
+
+            - **Android tablet/phone:** install the `.apk` (allow installs from your browser or files app). It installs over older builds and keeps saves.
+            - **Windows:** unzip and run `SunnyPaws.exe`.
+            - **Linux:** extract and run `SunnyPaws.x86_64`.
+            - **macOS:** unzip, then right-click the app and choose Open the first time (it is not notarized).
