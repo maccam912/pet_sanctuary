@@ -195,9 +195,15 @@ func _run() -> void:
 		await click(s._screen(s.pets[0].global_position + Vector3(0, 0.8, 0)))
 		must(s._selected == s.pets[0], "tap selects the pet")
 		var hearts_before := Game.state.hearts
-		var pet_btn: Button = _buttons(s._pet_card)[0]
+		var pet_btn: Button = _buttons(s._pet_card).filter(func(b): return b.text == "Pet")[0]
 		await click(pet_btn.get_global_rect().get_center())
 		must(Game.state.hearts == hearts_before + 1, "one click gives exactly one press")
+		var pencil: Button = _buttons(s._pet_card)[0]
+		await click(pencil.get_global_rect().get_center())
+		await wait(0.3)
+		must(s._overlays.get_child_count() == 1 and s._overlays.get_child(0) is PetNamer, "the pencil opens renaming")
+		(s._overlays.get_child(0) as PetNamer)._finish("")
+		await wait(0.2)
 		s._deselect()
 		s.cam_target = Vector3(0, 0, 2.5)
 		print("autopilot: real input ok")
@@ -207,6 +213,14 @@ func _run() -> void:
 	s._select(s.pets[0])
 	await wait(0.6)
 	await shot("pet_card")
+	s._rename(s.pets[0])
+	await wait(0.6)
+	var namer: PetNamer = s._overlays.get_child(0)
+	namer._name_edit.text = "Sir Woof"
+	await shot("rename")
+	namer.confirm()
+	await wait(0.6)
+	must(Game.state.pets[0].name == "Sir Woof" and s._selected == s.pets[0], "pet renamed from its card")
 	s._pet_action(s.pets[0], "Pet")
 	s._pet_action(s.pets[0], "Treat")
 	await wait(2.5)
@@ -445,11 +459,36 @@ func _run() -> void:
 	var menu := AdultMenu.new()
 	s._overlays.add_child(menu)
 	await wait(0.4)
-	for tab in ["Guide", "Skills", "Child Settings", "Progress", "Saves & PIN"]:
+	for tab in ["Guide", "Skills", "Child Settings", "Pets", "Progress", "Saves & PIN"]:
 		menu._select(tab)
 		await wait(0.3)
 		await shot("adult_" + tab.to_lower().replace(" ", "_").replace("&", "and"))
+	# A grown-up adds a pet for free and renames another.
+	var hearts_now := Game.state.hearts
+	menu._select("Pets")
+	await wait(0.3)
+	menu._add_pet("koala", "sky")
+	await wait(0.5)
+	var adder: PetNamer = menu.get_child(menu.get_child_count() - 1)
+	await shot("adult_pets_add")
+	adder.confirm()
+	await wait(0.4)
+	must(Game.state.has_pet("koala", "sky") and Game.state.pets.size() == 5, "grown-up added a pet")
+	must(Game.state.hearts == hearts_now, "adding a pet costs no hearts")
+	menu._rename(Game.state.pets[1])
+	await wait(0.4)
+	var renamer: PetNamer = menu.get_child(menu.get_child_count() - 1)
+	renamer._name_edit.text = "Captain"
+	renamer.confirm()
+	await wait(0.4)
+	must(Game.state.pets[1].name == "Captain", "pet renamed in the grown-ups menu")
+	await shot("adult_pets_after")
 	menu.queue_free()
+	await wait(0.1)
+	s._meet_new_pets()
+	must(s.pets.size() == Game.state.pets.size(), "the added pet walks in")
+	await wait(2.0)
+	await shot("pets_walk_in")
 
 	# Save, reload, back to title.
 	Game.save()

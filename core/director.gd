@@ -92,13 +92,20 @@ static func arrival_offers(state: GameState) -> Array:
 	var names: Array = Content.EXTRA_NAMES.duplicate()
 	_shuffle(names, rng)
 	for o in out:
-		o.name = Content.SPECIES[o.species]
-		if o.look != "" or state.name_taken(o.name):
-			for n in names:
-				if not state.name_taken(n) and not out.any(func(x): return x.get("name", "") == n):
-					o.name = n
-					break
+		o.name = fresh_name(state, o.species, o.look, names, out.map(func(x): return x.get("name", "")))
 	return out
+
+
+## A name for a pet about to join: the animal's own name, or for a special
+## colour (or when that name is taken) the first free one from `names`.
+static func fresh_name(state: GameState, species: String, look: String, names: Array, also_taken: Array = []) -> String:
+	var own: String = Content.SPECIES[species]
+	if look == "" and not state.name_taken(own):
+		return own
+	for n in names:
+		if not state.name_taken(n) and not also_taken.has(n):
+			return n
+	return own
 
 
 static func _any_tool_fits(unlocked: Array, emotion: String) -> bool:

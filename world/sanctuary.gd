@@ -352,7 +352,13 @@ func _select(pet: Pet) -> void:
 	var row := UI.hbox(14)
 	row.add_child(UI.pet_picture(pet.info, 100))
 	var names := UI.vbox(2)
-	names.add_child(UI.label(pet.info.name, 34, UI.INK, false))
+	var name_row := UI.hbox(8)
+	name_row.alignment = BoxContainer.ALIGNMENT_BEGIN
+	name_row.add_child(UI.label(pet.info.name, 34, UI.INK, false))
+	var rename := UI.icon_button("pencil", UI.PAPER, 52)
+	rename.pressed.connect(_rename.bind(pet))
+	name_row.add_child(rename)
+	names.add_child(name_row)
 	var friends := UI.hbox(2)
 	friends.alignment = BoxContainer.ALIGNMENT_BEGIN
 	for i in 5:
@@ -381,6 +387,17 @@ func _select(pet: Pet) -> void:
 	_pet_card = card
 	UI.fade_in(card, 0.15)
 	Sfx.say(pet.info.name)
+
+
+## Anyone can give a pet a new name, any time: the pencil on its card.
+func _rename(pet: Pet) -> void:
+	var namer := PetNamer.new(pet.info, "What should we call %s?" % pet.info.name)
+	_open(namer)
+	var new_name: String = await namer.done
+	if new_name != "":
+		pet.info.name = new_name
+		Game.save()
+	_select(pet)
 
 
 func _small_reward(pet: Pet) -> void:
@@ -559,6 +576,27 @@ func _welcome_new_pet() -> void:
 	Game.save()
 
 
+## Pets a grown-up added in the grown-ups menu walk in through the gate.
+func _meet_new_pets() -> void:
+	var s := Game.state
+	var first := pets.size()
+	if s.pets.size() <= first:
+		return
+	var gate: Vector3 = WorldBuilder.STATIONS.gate
+	for i in range(first, s.pets.size()):
+		var pet := _spawn_pet(i, gate + Vector3(randf_range(-1.5, 1.5), 0, 3.5))
+		var spot := gate + Vector3(randf_range(-3.0, 3.0), 0, randf_range(-6.0, -3.0))
+		pet.go_to(spot if world.walkable(spot) else world.random_walkable(Game.rng))
+	cam_target = gate + Vector3(0, 0, -4.0)
+	Sfx.jingle(1)
+	var count := s.pets.size() - first
+	var msg := "%s moved in! Tap to say hello." % s.pets[first].name
+	if count > 1:
+		msg = "%d new friends moved in! Tap to say hello." % count
+	toast(msg)
+	_refresh_hud()
+
+
 # --------------------------------------------------------- stations ----
 
 func _random_buddy() -> Dictionary:
@@ -626,6 +664,7 @@ func _open_settings() -> void:
 		return
 	var s := SettingsPanel.new(true)
 	s.quit_to_title.connect(func(): quit_to_title.emit())
+	s.closed.connect(_meet_new_pets)
 	_open(s)
 
 
