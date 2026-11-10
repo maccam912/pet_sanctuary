@@ -6,7 +6,10 @@ extends Control
 	set(v):
 		kind = v
 		queue_redraw()
-var tint := Color.TRANSPARENT  # optional override colour
+var tint := Color.TRANSPARENT:  # optional override colour
+	set(v):
+		tint = v
+		queue_redraw()
 
 
 func _init() -> void:

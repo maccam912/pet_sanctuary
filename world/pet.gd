@@ -4,13 +4,14 @@ extends Node3D
 
 const LOOPS := ["idle", "walk", "run", "dance", "eat"]
 
-var info: Dictionary   # the save-data entry {species, name, friendship}
+var info: Dictionary   # the save-data entry {species, name, friendship, look}
 var index := 0
 var world: WorldBuilder
 var anim: AnimationPlayer
 var model: Node3D
 var needs_help := false
 var busy := false       # true while the game is directing this pet
+var feeling := ""       # the big feeling while it needs help (picks its sound)
 
 var _target := Vector3.ZERO
 var _moving := false
@@ -20,8 +21,10 @@ var _on_arrive := Callable()
 var _fuss := 0.0
 
 
-static func make_model(species: String) -> Node3D:
-	return load("res://assets/pets/animal-%s.glb" % species).instantiate()
+static func make_model(species: String, look := "") -> Node3D:
+	var m: Node3D = load("res://assets/pets/animal-%s.glb" % species).instantiate()
+	PetLook.apply(m, look)
+	return m
 
 
 static func find_anim(root: Node) -> AnimationPlayer:
@@ -38,7 +41,7 @@ func setup(pet_info: Dictionary, pet_index: int, world_ref: WorldBuilder) -> voi
 	info = pet_info
 	index = pet_index
 	world = world_ref
-	model = make_model(info.species)
+	model = make_model(info.species, info.get("look", ""))
 	add_child(model)
 	anim = find_anim(model)
 	play("idle")
@@ -78,6 +81,8 @@ func _process(delta: float) -> void:
 			play("gesture-negative")
 			if anim:
 				anim.queue("idle")
+			if randf() < 0.5:
+				Sfx.animal(info.species, feeling)
 		return
 	_wait -= delta
 	if _wait <= 0.0:
@@ -116,6 +121,7 @@ func hop() -> void:
 
 func cheer() -> void:
 	hop()
+	Sfx.animal(info.species, "happy")
 	play("gesture-positive")
 	if anim:
 		anim.queue("idle")

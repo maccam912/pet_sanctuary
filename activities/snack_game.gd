@@ -45,7 +45,7 @@ func _next_round() -> void:
 		return
 	var pets: Array = Game.state.pets
 	_customer = pets[Game.rng.randi() % pets.size()]
-	stage.set_species(_customer.species)
+	stage.set_species(_customer.species, _customer.get("look", ""))
 	var foods := Content.FOODS.duplicate()
 	foods.shuffle()
 	order = foods.slice(0, ROUNDS[round_index])

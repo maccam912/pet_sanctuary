@@ -6,8 +6,10 @@ extends Node3D
 signal quit_to_title
 
 const PITCH := deg_to_rad(41.0)
-const GROW_SECONDS := 40.0
-const STATION_COLORS := {"snack": UI.SUN, "blocks": UI.CORAL, "cards": UI.SKY, "hide": UI.LEAF, "garden": UI.PINK, "calm": UI.LAVENDER}
+const GROW_SECONDS := 60.0
+const PETTING_REST := 60.0  # seconds before the same pet gives another heart for petting
+const STATION_COLORS := {"snack": UI.SUN, "blocks": UI.CORAL, "cards": UI.SKY, "hide": UI.LEAF, "garden": UI.PINK, "calm": UI.LAVENDER,
+	"booth": UI.CREAM, "dig": UI.SUN, "band": UI.LAVENDER, "art": UI.PINK}
 const GARDEN_BLOOMS := ["flower_redA", "crop_pumpkin", "flower_yellowA", "crop_carrot", "flower_purpleA", "crop_melon"]
 
 var world: WorldBuilder
@@ -21,7 +23,6 @@ var _markers: Control
 var _overlays: Control
 var _hearts_label: Label
 var _next_label: Label
-var _next_icon: TextureRect
 var _toast: PanelContainer
 var _toast_label: Label
 var _station_buttons := {}
@@ -87,7 +88,7 @@ func _build_ui() -> void:
 	_root.add_child(_markers)
 	for id in WorldBuilder.STATION_LABELS:
 		var b := UI.button(WorldBuilder.STATION_LABELS[id], STATION_COLORS[id], 22)
-		b.custom_minimum_size = Vector2(0, 58)
+		b.custom_minimum_size = Vector2(0, 54)
 		b.pressed.connect(_on_station.bind(id))
 		_markers.add_child(b)
 		_station_buttons[id] = b
@@ -122,9 +123,11 @@ func _build_ui() -> void:
 	bar.add_child(hearts)
 	var next := UI.panel(UI.CREAM, 30)
 	var nrow := UI.hbox(6)
-	_next_icon = UI.pet_icon("fox", 44)
-	_next_icon.modulate = Color(0.25, 0.2, 0.2, 0.55)
-	nrow.add_child(_next_icon)
+	var paw := Doodle.new()
+	paw.kind = "paw"
+	paw.tint = UI.INK_SOFT
+	paw.custom_minimum_size = Vector2(36, 36)
+	nrow.add_child(paw)
 	_next_label = UI.label("", 24, UI.INK_SOFT)
 	nrow.add_child(_next_label)
 	next.add_child(nrow)
@@ -170,11 +173,8 @@ func toast(text: String, seconds := 3.5) -> void:
 func _refresh_hud() -> void:
 	var s := Game.state
 	_hearts_label.text = str(s.hearts)
-	var next := s.next_arrival()
-	_next_label.get_parent().get_parent().visible = next != ""
-	if next != "":
-		_next_icon.texture = load("res://assets/pet_icons/animal-%s.png" % next)
-		_next_label.text = "New friend: %d / %d" % [mini(s.hearts, s.arrival_cost()), s.arrival_cost()]
+	_next_label.get_parent().get_parent().visible = s.roster_left() > 0
+	_next_label.text = "New friend: %d / %d" % [mini(s.hearts, s.arrival_cost()), s.arrival_cost()]
 
 
 func overlay_open() -> bool:
@@ -218,7 +218,7 @@ func _process(delta: float) -> void:
 	if _help_pet == null:
 		_moment_left -= delta
 		if _moment_left <= 0.0:
-			_begin_help(Director.pick_scenario(Game.state, Game.rng))
+			_begin_help()
 
 
 func _update_camera(delta: float) -> void:
@@ -343,13 +343,14 @@ func _select(pet: Pet) -> void:
 	pet.play("gesture-positive")
 	pet.anim.queue("idle")
 	Sfx.play("soft")
+	Sfx.animal(pet.info.species, "happy")
 	var card := UI.panel(UI.CREAM, 34)
 	card.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	card.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	card.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	card.offset_bottom = -18
 	var row := UI.hbox(14)
-	row.add_child(UI.pet_icon(pet.info.species, 100))
+	row.add_child(UI.pet_picture(pet.info, 100))
 	var names := UI.vbox(2)
 	names.add_child(UI.label(pet.info.name, 34, UI.INK, false))
 	var friends := UI.hbox(2)
@@ -362,6 +363,9 @@ func _select(pet: Pet) -> void:
 			h.tint = Color(0.85, 0.82, 0.78)
 		friends.add_child(h)
 	names.add_child(friends)
+	var pet_trait := Content.trait_of(pet.info.species)
+	if pet_trait != "":
+		names.add_child(UI.label(Content.TRAIT_LABELS[pet_trait], 18, UI.INK_SOFT, false))
 	row.add_child(names)
 	for action in [["Pet", UI.PINK], ["Treat", UI.SUN], ["Fetch", UI.SKY], ["Dance", UI.LAVENDER]]:
 		var b := UI.button(action[0], action[1], 26)
@@ -381,7 +385,7 @@ func _select(pet: Pet) -> void:
 
 func _small_reward(pet: Pet) -> void:
 	var last: float = _last_reward.get(pet.index, -100.0)
-	if _clock - last < 12.0:
+	if _clock - last < PETTING_REST:
 		return
 	_last_reward[pet.index] = _clock
 	pet.info.friendship = int(pet.info.friendship) + 1
@@ -412,6 +416,7 @@ func _pet_action(pet: Pet, action: String) -> void:
 		"Dance":
 			pet.play("dance")
 			Sfx.jingle(randi() % 5)
+			Sfx.animal(pet.info.species, "happy")
 			_small_reward(pet)
 			await get_tree().create_timer(3.0).timeout
 			if is_instance_valid(pet) and pet == _selected:
@@ -478,18 +483,24 @@ func _other_pet(not_this: Pet) -> Pet:
 	return others[randi() % others.size()] if not others.is_empty() else not_this
 
 
-func _begin_help(scenario: Dictionary, pet: Pet = null) -> void:
+## A pet gets a big feeling. With no arguments a free pet is picked, and then a
+## story that fits that pet.
+func _begin_help(scenario := {}, pet: Pet = null) -> void:
 	if pet == null:
 		var free := pets.filter(func(p): return not p.busy)
 		if free.is_empty():
 			_moment_left = 10.0
 			return
 		pet = free[randi() % free.size()]
+	if scenario.is_empty():
+		scenario = Director.pick_scenario(Game.state, Game.rng, "", Content.trait_of(pet.info.species))
 	_help_pet = pet
 	_help_scenario = scenario
 	pet.needs_help = true
+	pet.feeling = scenario.emotion
 	pet.stop()
 	Sfx.play("question")
+	Sfx.animal(pet.info.species, scenario.emotion)
 	toast("%s has a big feeling. Tap the cloud to help!" % pet.info.name, 4.0)
 
 
@@ -522,13 +533,19 @@ func calm_together(what_happened: String, pet_info: Dictionary) -> void:
 	Sfx.music("play")
 
 
+## The child chooses which animal to invite and what to call it. Hearts are
+## only spent once a friend is picked.
 func _welcome_new_pet() -> void:
 	var s := Game.state
-	if not s.can_welcome() or _help_pet != null:
+	if not s.can_welcome() or _help_pet != null or overlay_open():
+		return
+	var picker := FriendPicker.new(Director.arrival_offers(s))
+	_open(picker)
+	var choice: Dictionary = await picker.done
+	if choice.is_empty() or not s.can_welcome():
 		return
 	Game.add_hearts(-s.arrival_cost())
-	var sp := s.next_arrival()
-	s.add_pet(sp)
+	s.add_pet(choice.species, choice.look, choice.name)
 	var gate: Vector3 = WorldBuilder.STATIONS.gate
 	var pet := _spawn_pet(s.pets.size() - 1, gate + Vector3(0, 0, 3.5))
 	pet.busy = true
@@ -560,11 +577,19 @@ func _on_station(id: String) -> void:
 			_open(_garden_panel)
 		"hide":
 			_start_hide()
+		"booth":
+			var booth := RecordingBooth.new()
+			_open(booth)
+			await booth.closed
+			Sfx.music("main")
 		_:
 			var game: Activity
 			match id:
 				"snack": game = SnackGame.new()
 				"blocks": game = BlockGame.new()
+				"dig": game = DigGame.new()
+				"band": game = BandGame.new()
+				"art": game = ArtGame.new()
 				_: game = CardGame.new()
 			game.host = self
 			game.buddy = _random_buddy()
@@ -708,7 +733,7 @@ func garden_tap(i: int) -> void:
 			Sfx.play("chime")
 		4:
 			plot.stage = 0
-			Game.add_hearts(3)
+			Game.add_hearts(2)
 			Sfx.play("great")
 		_:
 			Sfx.play("soft")

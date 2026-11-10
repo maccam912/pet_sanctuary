@@ -61,7 +61,7 @@ func _ready() -> void:
 	name_plate.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	name_plate.add_child(UI.label(pet.name, 34))
 	left.add_child(name_plate)
-	_stage = PetStage.new(pet.species, 380)
+	_stage = PetStage.new(pet.species, 380, pet.get("look", ""))
 	left.add_child(_stage)
 	_face_row = UI.hbox(10)
 	_face_row.custom_minimum_size = Vector2(0, 76)
@@ -250,8 +250,9 @@ func _run_practice() -> void:
 
 
 func _step_story(text: String, button: String) -> void:
-	set_prompt(text)
 	Sfx.play("oops")
+	Sfx.animal(pet.species, scenario.emotion)
+	set_prompt(text)
 	await _next(button)
 
 
@@ -375,6 +376,7 @@ func _calm_down(with_impulse: bool) -> void:
 		level = Director.level_after_tool(level)
 		_apply_level()
 		_stage.play("gesture-positive", true)
+		Sfx.animal(pet.species, "calm")
 		set_prompt("%s: \"Ahhh. My feeling got smaller!\"" % pet.name if level >= 2 else "%s: \"Ahhh. I feel calm now.\"" % pet.name)
 		await _wait(1.3)
 		await _next()
@@ -489,6 +491,7 @@ func _step_solve() -> void:
 	_show_face("happy")
 	_stage.play("dance")
 	Sfx.jingle(0)
+	Sfx.animal(pet.species, "happy")
 	set_prompt(t(scenario.ending))
 	await _wait(1.5)
 	await _next()

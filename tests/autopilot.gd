@@ -15,12 +15,17 @@ func _ready() -> void:
 	for i in range(1, 4):
 		Game.store.delete_to_trash(i)
 	Game.store.empty_trash()
+	if DirAccess.dir_exists_absolute("user://autopilot_voice"):
+		for f in DirAccess.get_files_at("user://autopilot_voice"):
+			DirAccess.remove_absolute("user://autopilot_voice/" + f)
+	Game.voice = VoiceStore.new("user://autopilot_voice")
 	Game.settings.read_aloud = false
 	Game.settings.music = 0.0
 	Game.settings.sfx = 0.0
+	Sfx.use_mic = false
 	Game.rng.seed = 4242
 	seed(4242)
-	get_tree().create_timer(240.0).timeout.connect(func():
+	get_tree().create_timer(420.0).timeout.connect(func():
 		print("AUTOPILOT TIMEOUT (a step failed; see errors above)")
 		get_tree().quit(1))
 	_run()
@@ -84,6 +89,20 @@ func drag(from: Vector2, to: Vector2) -> void:
 		await wait(0.03)
 	_mouse(to, false)
 	await wait(0.2)
+
+
+## A short beep standing in for a microphone take (the same shape the
+## recorder hands over after tidying: mono, 16 bit).
+func _fake_take() -> AudioStreamWAV:
+	var bytes := PackedByteArray()
+	bytes.resize(12000 * 2)
+	for i in 12000:
+		bytes.encode_s16(i * 2, int(sin(i * 0.12) * 12000.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = 24000
+	wav.data = bytes
+	return wav
 
 
 func _find_thermo(root: Node) -> Thermometer:
@@ -171,6 +190,8 @@ func _run() -> void:
 		await wait(0.5)
 		s.pets[0].stop()
 		s.pets[0]._wait = 99.0
+		s.pets[0].position = Vector3(0, 0, 4.5)  # open ground, clear of the station signs
+		await wait(0.2)
 		await click(s._screen(s.pets[0].global_position + Vector3(0, 0.8, 0)))
 		must(s._selected == s.pets[0], "tap selects the pet")
 		var hearts_before := Game.state.hearts
@@ -287,6 +308,106 @@ func _run() -> void:
 	blocks.close(5)
 	await wait(0.3)
 
+	# The three newer games.
+	s._on_station("dig")
+	await wait(0.8)
+	var dig: DigGame = s._overlays.get_child(0)
+	for round_number in DigGame.ROUNDS:
+		var miss := (dig.treasure + 7) % dig.cells.size()
+		dig.dig(miss)
+		must(dig.cells[miss].text != "" and dig.misses == 1, "a wrong dig gives a clue")
+		await wait(0.3)
+		if round_number == 0:
+			await shot("dig_clue")
+		dig.dig(dig.treasure)
+		await wait(2.2)
+	await shot("dig_win")
+	must(dig.round_index == DigGame.ROUNDS, "treasure dig finished")
+	dig.close(5)
+	await wait(0.3)
+
+	s._on_station("band")
+	await wait(1.0)
+	var band: BandGame = s._overlays.get_child(0)
+	await shot("band")
+	for n in 80:
+		if band.listening:
+			break
+		await wait(0.2)
+	must(band.listening, "band hands over after the tune")
+	var first_tune: Array = band.tune.duplicate()
+	band.tap((first_tune[0] + 1) % band.pads.size())
+	must(band.slips == 1 and not band.listening, "a wrong note replays the tune")
+	for n in 80:
+		if band.listening:
+			break
+		await wait(0.2)
+	must(band.tune == first_tune, "same tune after a slip")
+	for note in first_tune:
+		band.tap(note)
+		await wait(0.2)
+	await wait(1.0)
+	must(band.round_index == 1, "band round won")
+	band.close(0)
+	await wait(0.3)
+
+	s._on_station("art")
+	await wait(3.4)
+	var art: ArtGame = s._overlays.get_child(0)
+	await shot("art_splat")
+	art.tell(ArtGame.STORMY)
+	must(not art.waiting_tap, "stormy thought does not move on")
+	art.tell(ArtGame.HELPFUL)
+	must(art.waiting_tap, "helpful thought moves on")
+	var kinds := ArtGame.THINGS.keys()
+	for n in ArtGame.SPLATS:
+		for wait_n in 30:
+			if art.waiting_tap:
+				break
+			await wait(0.2)
+		art.offer()
+		await wait(0.2)
+		if n == 0:
+			await shot("art_ideas")
+		art.make(kinds[n % kinds.size()])
+	await wait(2.4)
+	await shot("art_done")
+	must(art.fixed == ArtGame.SPLATS, "every splat became something")
+	art.close(4)
+	await wait(0.3)
+
+	# Recording booth: an animal sound and a voice line (with a stand-in take).
+	s._on_station("booth")
+	await wait(0.6)
+	var booth: RecordingBooth = s._overlays.get_child(0)
+	booth.pick_feeling("mad")
+	await shot("booth_animals")
+	booth.bar.finish_take(_fake_take())
+	must(Game.voice.animal_stream(booth.species, "frustrated") != null, "animal sound saved and shared with a close feeling")
+	await wait(0.3)
+	booth.show_tab("Voice Lines")
+	await wait(0.4)
+	var line: String = booth.lines[booth.line_index].text
+	booth.bar.finish_take(_fake_take())
+	await shot("booth_lines")
+	must(booth.lines[booth.line_index].recorded, "voice line saved")
+	var spoken: Array = Game.voice.plan("Hello there, helper friend. %s Goodbye for now, friend." % line)
+	must(spoken.size() == 3 and spoken[1].stream != null, "the recorded line is used inside spoken text")
+	booth.step_line(1)
+	must(not booth.lines[booth.line_index].recorded, "next line is waiting")
+	booth.close()
+	await wait(0.4)
+	must(not s.overlay_open(), "booth closed")
+
+	# A pet that wants everything perfect.
+	var cat := s.pets[1]
+	must(Content.trait_of(cat.info.species) == "perfect", "the starter cat is a perfectionist")
+	s._begin_help(Content.scenario_by_id("wrong_answer"), cat)
+	s._start_moment()
+	await wait(0.5)
+	await drive_flow(s._overlays.get_child(0), "perfect")
+	await wait(0.5)
+
 	# Hide and seek.
 	s._start_hide()
 	await wait(1.5)
@@ -298,13 +419,24 @@ func _run() -> void:
 	await wait(1.0)
 
 	# New arrival.
-	Game.state.hearts = 50
+	Game.state.hearts = 200
 	s._refresh_hud()
 	await wait(0.3)
 	s._welcome_new_pet()
+	await wait(0.8)
+	var picker: FriendPicker = s._overlays.get_child(0)
+	await shot("friend_picker")
+	must(picker.offers.size() == 3 and picker.offers[2].look != "", "three animals to choose from, one in a special colour")
+	picker.choose(2)
+	await wait(0.6)
+	picker._name_edit.text = "Sparkle"
+	await shot("friend_name")
+	picker.confirm(2)
 	await wait(3.5)
 	await shot("arrival")
 	must(Game.state.pets.size() == 4, "pet arrived")
+	must(Game.state.pets[3].name == "Sparkle" and Game.state.pets[3].look != "", "chosen pet, look and name are kept")
+	must(Game.state.hearts == 170, "the first new friend costs 30 hearts")
 	s._start_moment()
 	await wait(0.5)
 	await drive_flow(s._overlays.get_child(0), "arrival")

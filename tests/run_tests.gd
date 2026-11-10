@@ -21,6 +21,9 @@ func _init() -> void:
 	test_full_playthrough()
 	test_save_store()
 	test_adult_gate()
+	test_roster_and_pacing()
+	test_perfectionism()
+	test_voice_store()
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
 
@@ -34,7 +37,7 @@ func rng(seed_value := 7) -> RandomNumberGenerator:
 func test_content() -> void:
 	print("content")
 	var ids := {}
-	for s in Content.SCENARIOS + [Content.ACTIVITY_FRUSTRATION]:
+	for s in Content.all_scenarios() + [Content.ACTIVITY_FRUSTRATION]:
 		check(not ids.has(s.id), "unique id " + s.id)
 		ids[s.id] = true
 		check(Content.BIG_FEELINGS.has(s.emotion), s.id + " emotion valid")
@@ -82,7 +85,15 @@ func test_state_roundtrip() -> void:
 	var s3 := GameState.from_dict({"hearts": "x", "pets": [{"species": "dragon"}], "adult": {"frustration_level": 99}})
 	check(s3.adult.frustration_level == 3, "clamped")
 	check(s3.techniques.size() == Content.TECHNIQUE_ORDER.size(), "techniques filled in")
-	check(s.arrival_cost() == 12 and not s3.can_welcome(), "arrival cost")
+	check(s.arrival_cost() == 30 and not s3.can_welcome(), "arrival cost")
+	# Special-colour pets and typed names survive; unknown looks fall back to plain.
+	s.add_pet("fox", "rose", "  Sparkle{pet}  ")
+	s.pets.append({"species": "pig", "name": "Old", "friendship": 1, "look": "glitter"})
+	var s4 := GameState.from_dict(JSON.parse_string(JSON.stringify(s.to_dict())))
+	check(s4.has_pet("fox", "rose") and not s4.has_pet("fox"), "look survives")
+	check(s4.pets[3].name == "Sparklepet", "typed name cleaned and kept")
+	check(s4.has_pet("pig"), "unknown look becomes plain")
+	check(GameState.clean_name("   ", "Maple") == "Maple" and GameState.clean_name("Abcdefghijklmnop", "x").length() == 12, "name limits")
 
 
 func test_director_scenarios() -> void:
@@ -201,9 +212,11 @@ func test_full_playthrough() -> void:
 		Director.finish_moment(s, sc, moment % s.pets.size())
 		while s.can_welcome():
 			s.hearts -= s.arrival_cost()
-			s.add_pet(s.next_arrival())
+			var offer: Dictionary = Director.arrival_offers(s)[0]
+			s.add_pet(offer.species, offer.look, offer.name)
 	check(s.moments_done == 120, "moments counted")
-	check(s.pets.size() == Content.SPECIES.size(), "all pets welcomed (%d)" % s.pets.size())
+	# 120 moments is many hours of play: new friends should still be coming.
+	check(s.pets.size() >= 10 and s.pets.size() <= 18, "new friends arrive slowly (%d)" % s.pets.size())
 	for id in Content.TECHNIQUE_ORDER:
 		check(s.stage_of(id) >= Content.STAGE_PRACTICE, id + " reached practicing+ (stage %d)" % s.stage_of(id))
 	check(GameState.from_dict(JSON.parse_string(JSON.stringify(s.to_dict()))).pets.size() == s.pets.size(), "late save roundtrip")
@@ -254,3 +267,137 @@ func test_adult_gate() -> void:
 	check(AdultGate.check_pin(h, "4821") and not AdultGate.check_pin(h, "0000"), "pin check")
 	check(not AdultGate.check_pin("", "0000"), "no pin set")
 	check(AdultGate.valid_pin("1234") and not AdultGate.valid_pin("12a4") and not AdultGate.valid_pin("123"), "pin format")
+
+
+func test_roster_and_pacing() -> void:
+	print("roster and pacing")
+	check(Content.roster_size() >= 90, "big roster (%d)" % Content.roster_size())
+	for look in Content.LOOK_ORDER:
+		check(Content.LOOKS.has(look), "look " + look)
+	var s := GameState.new_game()
+	var costs := []
+	var seen := {}
+	while s.roster_left() > 0:
+		var offers := Director.arrival_offers(s)
+		check(offers.size() >= 1 and offers.size() <= Director.OFFERS, "1 to 3 animals to choose from")
+		check(Director.arrival_offers(s) == offers, "offers stay the same until a pet is welcomed")
+		var species := {}
+		var names := {}
+		for o in offers:
+			check(not s.has_pet(o.species, o.look), "offer is a new pet")
+			check(not s.name_taken(o.name), "offer has a fresh name")
+			species[o.species] = true
+			names[o.name] = true
+		check(species.size() == offers.size() and names.size() == offers.size(), "offers differ from each other")
+		costs.append(s.arrival_cost())
+		var pick: Dictionary = offers[s.pets.size() % offers.size()]
+		s.add_pet(pick.species, pick.look, pick.name)
+		seen["%s/%s" % [pick.species, pick.look]] = true
+	check(s.pets.size() == Content.roster_size() and not s.can_welcome(), "whole roster can be collected")
+	check(seen.size() == Content.roster_size() - 3, "no pet offered twice")
+	check(costs[0] >= 25 and costs[1] > costs[0] and costs[-1] >= 100 and costs.max() == costs[-1], "each friend costs more, up to a cap")
+	# Early offers are mostly everyday animals with one special colour.
+	var offers0 := Director.arrival_offers(GameState.new_game())
+	check(offers0.filter(func(o): return o.look == "").size() == 2, "two everyday animals, one special")
+
+
+func test_perfectionism() -> void:
+	print("perfectionism")
+	check(Content.PERFECT_SCENARIOS.size() >= 5, "perfectionism stories")
+	for sp in Content.PERFECTIONISTS:
+		check(Content.SPECIES.has(sp), "perfectionist species " + sp)
+	check(Content.STARTER_SPECIES.any(func(sp): return Content.trait_of(sp) == "perfect"), "a starter pet is a perfectionist")
+	check(Content.scenario_by_id("wrong_answer").emotion == "embarrassed", "lookup finds trait stories")
+	var s := GameState.new_game()
+	for id in Content.TECHNIQUE_ORDER:
+		s.techniques[id].stage = Content.STAGE_PRACTICE
+	var r := rng(5)
+	var own := 0
+	for i in 200:
+		check(not Director.pick_scenario(s, r).has("trait"), "other pets never get perfectionism stories")
+		var sc := Director.pick_scenario(s, r, "", "perfect")
+		if sc.get("trait", "") == "perfect":
+			own += 1
+		Director.remember_scenario(s, sc.id)
+	check(own > 60 and own < 150, "perfectionists get their stories about half the time (%d/200)" % own)
+	# Every feeling has at least two tools, so a Big feeling can always come down.
+	for e in Content.BIG_FEELINGS:
+		var n := 0
+		for id in Content.TECHNIQUE_ORDER:
+			if Content.TECHNIQUES[id]["for"].has(e):
+				n += 1
+		check(n >= 2, e + " has two or more tools")
+
+
+func test_voice_store() -> void:
+	print("voice store")
+	check(VoiceStore.normalize("  Oops!  It's OK. ") == "oops its ok", "normalize")
+	check(VoiceStore.split("Biscuit: \"Ahhh. I feel calm now.\"") == ["Biscuit:", "\"Ahhh. I feel calm now.\""], "a quote is its own line")
+	check(VoiceStore.split("Then... CRASH! It all fell down.") == ["Then... CRASH! It all fell down."], "short bits stay together")
+	check(VoiceStore.split("Which calm tool should we use? Let's pick one together.").size() == 2, "sentences split")
+	check(VoiceStore.split("Line one here.\nLine two here.").size() == 2, "line breaks split")
+	check(VoiceStore.split("7") == ["7"] and VoiceStore.split("  ").is_empty(), "tiny and empty text")
+	check(VoiceStore.line_file("I can't do it YET.") == VoiceStore.line_file("\"i cant do it yet\""), "same words, same file")
+	check(VoiceStore.display("\"Ahhh. I feel calm now.\"") == "Ahhh. I feel calm now.", "display strips quotes")
+	check(Content.voice_script().size() >= 40, "starter script")
+	for line in Content.voice_script():
+		check(not line.contains("{"), "starter line has no blanks: " + line)
+
+	# A fake microphone take: silence, a loud beep, silence (stereo, 48 kHz).
+	var take := _beep(48000, 0.4, 0.5, 0.6)
+	var wav := VoiceStore.clean(take)
+	check(wav != null and not wav.stereo and wav.mix_rate == 24000, "take becomes small and mono")
+	check(wav != null and wav.get_length() > 0.45 and wav.get_length() < 0.9, "silence trimmed (%.2fs)" % (wav.get_length() if wav else 0.0))
+	check(VoiceStore.clean(_beep(48000, 0.5, 0.0, 0.5)) == null, "silence is not a take")
+	check(VoiceStore.clean(null) == null, "no take")
+
+	var dir := "user://test_voice_%d" % Time.get_ticks_usec()
+	var store := VoiceStore.new(dir)
+	check(store.animal_stream("dog", "happy") == null and not store.has_line("Hello there friend."), "empty at start")
+	check(store.save(VoiceStore.animal_file("dog", "mad"), wav), "animal sound saved")
+	check(store.animal_stream("dog", "mad") != null, "exact feeling")
+	check(store.animal_stream("dog", "frustrated") != null, "close feeling borrows the sound")
+	check(store.animal_stream("dog", "happy") == null and store.animal_stream("cat", "mad") == null, "no sound for others")
+	check(store.animal_count("dog") == 1, "count")
+	var plan := store.plan("Which tool? I can't do it YET. Try it now.")
+	check(plan.size() == 1 and plan[0].stream == null, "nothing recorded: one read-aloud piece")
+	check(store.save(VoiceStore.line_file("I can't do it YET."), wav), "line saved")
+	plan = store.plan("Which tool shall we use? I can't do it YET. Try it now please.")
+	check(plan.size() == 3 and plan[0].stream == null and plan[1].stream != null and plan[2].stream == null, "recorded line slots into the middle")
+	store.plan("Biscuit has a big feeling.")
+	store.save_heard()
+	# A fresh store reads everything back from disk.
+	var again := VoiceStore.new(dir)
+	check(again.has_line("i cant do it yet") and again.stream(VoiceStore.line_file("I can't do it YET.")) != null, "recordings reload")
+	check(again.heard.has("try it now please"), "heard lines reload")
+	var lines := again.booth_lines(["I can't do it YET.", "Mistakes help me learn."], ["Biscuit"])
+	check(lines[0].text == "I can't do it YET." and lines[0].recorded and not lines[1].recorded, "starter lines first")
+	check(lines[-1].text == "Biscuit has a big feeling.", "lines that name a pet come last")
+	var keys := {}
+	for l in lines:
+		keys[VoiceStore.normalize(l.text)] = true
+	check(keys.size() == lines.size(), "no line listed twice")
+	again.erase(VoiceStore.line_file("I can't do it YET."))
+	check(not again.has_line("I can't do it YET.") and VoiceStore.new(dir).stream(VoiceStore.line_file("I can't do it YET.")) == null, "erase")
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(dir + "/" + f)
+	DirAccess.remove_absolute(dir)
+
+
+func _beep(rate: int, quiet_before: float, loud: float, quiet_after: float) -> AudioStreamWAV:
+	var bytes := PackedByteArray()
+	var total := int(rate * (quiet_before + loud + quiet_after))
+	bytes.resize(total * 4)
+	for i in total:
+		var t := float(i) / rate
+		var v := 0
+		if t >= quiet_before and t < quiet_before + loud:
+			v = int(sin(t * TAU * 440.0) * 9000.0)
+		bytes.encode_s16(i * 4, v)
+		bytes.encode_s16(i * 4 + 2, v)
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.stereo = true
+	wav.mix_rate = rate
+	wav.data = bytes
+	return wav

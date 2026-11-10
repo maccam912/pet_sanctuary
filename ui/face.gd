@@ -84,6 +84,19 @@ func _draw() -> void:
 			draw_line(el + Vector2(-r * 0.22, -r * 0.3), el + Vector2(r * 0.2, -r * 0.22), ink, w, true)
 			draw_line(er + Vector2(r * 0.22, -r * 0.38), er + Vector2(-r * 0.2, -r * 0.2), ink, w, true)
 			draw_line(c + Vector2(-r * 0.26, r * 0.5), c + Vector2(r * 0.26, r * 0.38), ink, w, true)
+		"embarrassed":
+			# looking away, pink cheeks, wobbly little smile
+			var blush := Color(0.93, 0.33, 0.42, 0.55)
+			draw_circle(el + Vector2(-r * 0.12, r * 0.34), r * 0.2, blush)
+			draw_circle(er + Vector2(r * 0.12, r * 0.34), r * 0.2, blush)
+			draw_circle(el + Vector2(-eye * 0.5, eye * 0.6), eye, ink)
+			draw_circle(er + Vector2(-eye * 0.5, eye * 0.6), eye, ink)
+			draw_line(el + Vector2(-r * 0.2, -r * 0.2), el + Vector2(r * 0.16, -r * 0.34), ink, w, true)
+			draw_line(er + Vector2(r * 0.2, -r * 0.2), er + Vector2(-r * 0.16, -r * 0.34), ink, w, true)
+			var wob := PackedVector2Array()
+			for i in 7:
+				wob.append(c + Vector2(-r * 0.24 + i * r * 0.08, r * 0.5 + (r * 0.05 if i % 2 == 0 else -r * 0.05)))
+			draw_polyline(wob, ink, w, true)
 		"happy":
 			draw_circle(el, eye, ink)
 			draw_circle(er, eye, ink)

@@ -4,6 +4,7 @@ extends SubViewportContainer
 ## Exercises drive it: `breath` swells the pet, `shake` makes it tremble.
 
 var species := "dog"
+var look := ""
 var breath := 1.0
 var shake := 0.0
 var squash := 1.0   # 1 = normal, <1 = tucked / melted
@@ -18,8 +19,9 @@ var _t := 0.0
 var _marks: Control
 
 
-func _init(pet_species := "dog", px := 380) -> void:
+func _init(pet_species := "dog", px := 380, pet_look := "") -> void:
 	species = pet_species
+	look = pet_look
 	custom_minimum_size = Vector2(px, px)
 	stretch = true
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -60,7 +62,7 @@ func _ready() -> void:
 	_holder = Node3D.new()
 	_holder.rotation.y = 0.35
 	_vp.add_child(_holder)
-	set_species(species)
+	set_species(species, look)
 	_marks = Control.new()
 	_marks.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_marks.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -83,11 +85,12 @@ func _draw_marks() -> void:
 			_marks.draw_line(a, b, stress_color, 5.0 + 5.0 * stress, true)
 
 
-func set_species(sp: String) -> void:
+func set_species(sp: String, pet_look := "") -> void:
 	species = sp
+	look = pet_look
 	if _model:
 		_model.queue_free()
-	_model = Pet.make_model(sp)
+	_model = Pet.make_model(sp, look)
 	_holder.add_child(_model)
 	_anim = Pet.find_anim(_model)
 	play("idle")

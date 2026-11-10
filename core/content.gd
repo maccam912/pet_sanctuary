@@ -16,12 +16,21 @@ const EMOTIONS := {
 		"brain": "Disappointment makes the brain forget the good things that can still happen."},
 	"jealous": {"label": "Jealous", "color": Color("7dbb6a"),
 		"brain": "Jealous feelings make the brain only see what we don't have."},
+	"embarrassed": {"label": "Embarrassed", "color": Color("ee8fa8"),
+		"brain": "Embarrassed feelings make the brain think everyone is staring. Really, everybody makes mistakes."},
 	"calm": {"label": "Calm", "color": Color("8fd6c2"), "brain": ""},
 	"happy": {"label": "Happy", "color": Color("ffd166"), "brain": ""},
 }
 
 ## Emotions a scenario can be about (calm/happy are only used for display).
-const BIG_FEELINGS := ["mad", "frustrated", "worried", "sad", "disappointed", "jealous"]
+const BIG_FEELINGS := ["mad", "frustrated", "worried", "sad", "disappointed", "jealous", "embarrassed"]
+
+## When the child has not recorded an animal sound for a feeling, a close one is used.
+const SOUND_FALLBACK := {
+	"mad": ["frustrated"], "frustrated": ["mad"], "jealous": ["mad", "frustrated"],
+	"sad": ["disappointed"], "disappointed": ["sad"], "worried": ["embarrassed"],
+	"embarrassed": ["worried", "sad"], "calm": ["happy"], "happy": ["calm"],
+}
 
 const BODY_CLUES := {
 	"hot_face": "Hot face",
@@ -35,6 +44,8 @@ const BODY_CLUES := {
 	"heavy": "Heavy, droopy body",
 	"tight_jaw": "Tight teeth",
 	"lump": "Lump in the throat",
+	"red_cheeks": "Red, warm cheeks",
+	"hunched": "Small, hunched body",
 }
 
 ## Feeling thermometer labels, 1..5.
@@ -49,7 +60,7 @@ const TECHNIQUES := {
 		"name": "Balloon Breaths", "color": Color("8ed1f0"),
 		"short": "Breathe in slow, breathe out slower.",
 		"how": "Hold down to breathe in and fill the balloon. Let go to breathe out slowly.",
-		"for": ["mad", "frustrated", "worried", "sad", "disappointed", "jealous"],
+		"for": ["mad", "frustrated", "worried", "sad", "disappointed", "jealous", "embarrassed"],
 		"science": "Slow belly breathing with a longer out-breath. Lowers heart rate and body arousal.",
 	},
 	"count": {
@@ -70,35 +81,35 @@ const TECHNIQUES := {
 		"name": "Squeeze and Melt", "color": Color("ff8c7a"),
 		"short": "Squeeze tight, then melt like ice cream.",
 		"how": "Hold down to squeeze your muscles tight. Let go and melt.",
-		"for": ["mad", "frustrated", "worried"],
+		"for": ["mad", "frustrated", "worried", "embarrassed"],
 		"science": "Progressive muscle relaxation: tensing then releasing muscle groups to let go of body tension.",
 	},
 	"glitter": {
 		"name": "Glitter Jar Break", "color": Color("b9a6f0"),
 		"short": "Take a break and watch the glitter settle.",
 		"how": "Shake the jar, then watch quietly until all the glitter settles.",
-		"for": ["mad", "frustrated", "worried", "sad", "disappointed", "jealous"],
+		"for": ["mad", "frustrated", "worried", "sad", "disappointed", "jealous", "embarrassed"],
 		"science": "A self-chosen calm-down break with a mindful focus, taken to cool off (not as a punishment).",
 	},
 	"look": {
 		"name": "Look Around", "color": Color("f2a6c8"),
 		"short": "Notice what you see, hear and feel right now.",
 		"how": "Find things you can see, sounds you can hear, and feel your feet on the floor.",
-		"for": ["worried", "sad"],
+		"for": ["worried", "sad", "embarrassed"],
 		"science": "Sensory grounding (5-4-3-2-1 style): moving attention from worries to the present moment.",
 	},
 	"thoughts": {
 		"name": "Helpful Thoughts", "color": Color("ffb86b"),
 		"short": "Swap a stormy thought for a helpful one.",
 		"how": "Shrink the stormy thought, then pick a thought that helps.",
-		"for": ["mad", "frustrated", "worried", "sad", "disappointed", "jealous"],
+		"for": ["mad", "frustrated", "worried", "sad", "disappointed", "jealous", "embarrassed"],
 		"science": "Cognitive reappraisal and coping self-talk, core skills in CBT for children (for example Coping Cat).",
 	},
 	"stretch": {
 		"name": "Slow Stretch", "color": Color("9ad0a0"),
 		"short": "Reach up slow like a tall tree.",
 		"how": "Follow the sun slowly with your finger. Slow is the trick!",
-		"for": ["mad", "frustrated", "worried", "sad", "disappointed"],
+		"for": ["mad", "frustrated", "worried", "sad", "disappointed", "embarrassed"],
 		"science": "Slow, gentle movement. Calming activity lowers anger; fast, hard exercise in the moment does not.",
 	},
 }
@@ -122,6 +133,31 @@ const STARTER_SPECIES := ["dog", "cat", "bunny"]
 const ARRIVAL_ORDER := ["fox", "panda", "penguin", "koala", "pig", "chick", "elephant",
 	"lion", "monkey", "tiger", "giraffe", "deer", "cow", "beaver", "parrot", "polar",
 	"hog", "crab", "bee", "caterpillar", "fish"]
+
+## Special colours. Every animal also comes in each of these, so the roster is
+## 24 animals x 4 looks. `hue` turns the colours around the colour wheel and
+## `tint` colours the white and grey parts ("" is the everyday look).
+const LOOK_ORDER := ["rose", "sky", "mint"]
+const LOOKS := {
+	"rose": {"hue": 0.88, "tint": Color("ffb8d2")},
+	"sky": {"hue": 0.55, "tint": Color("b4d6ff")},
+	"mint": {"hue": 0.3, "tint": Color("b6f0c2")},
+}
+## Names for special-colour pets (the child can type a different one).
+const EXTRA_NAMES := ["Pip", "Sunny", "Waffles", "Noodle", "Pickle", "Mochi", "Peanut", "Bean",
+	"Pumpkin", "Sprout", "Coco", "Honey", "Jellybean", "Dot", "Fig", "Twig", "Olive", "Poppy",
+	"Tater", "Ziggy", "Juniper", "Marble", "Nugget", "Pepper", "Plum", "Rolo", "Skittle",
+	"Taffy", "Toffee", "Whiskers", "Zuzu", "Blossom", "Button", "Cricket", "Dumpling",
+	"Flapjack", "Gumdrop", "Hopscotch", "Jojo", "Kazoo", "Lolly", "Muffin", "Nibbles",
+	"Oreo", "Pancake", "Quill", "Ruffles", "Sprinkle", "Tumble", "Wiggles", "Yoyo", "Acorn",
+	"Bubba", "Cupcake", "Doodle", "Echo", "Fudge", "Giggles", "Huckle", "Iggy", "Jazz",
+	"Kiki", "Lemon", "Mango", "Nori", "Otto", "Pogo", "Rosie", "Scout", "Tinker", "Velvet",
+	"Winnie"]
+
+## Some pets like everything to be just right. They get the "perfect" stories:
+## wobbly lines, wrong answers, being scared to try in case it goes wrong.
+const PERFECTIONISTS := ["cat", "fox", "penguin", "beaver", "bee", "giraffe", "parrot", "deer"]
+const TRAIT_LABELS := {"perfect": "Likes things just right"}
 
 const FOODS := ["apple", "carrot", "fish", "banana", "cookie", "watermelon", "strawberry",
 	"cupcake", "honey", "corn", "cheese", "broccoli", "pear", "grapes"]
@@ -302,6 +338,66 @@ const SCENARIOS := [
 		"ending": "{pet} did one last BIG jump and came inside. Tomorrow there will be more play!"},
 ]
 
+## Stories for pets that want everything to be perfect (see PERFECTIONISTS).
+## What they practice: mistakes are how we learn, nobody is watching as closely
+## as it feels, and "good enough" really is good.
+const PERFECT_SCENARIOS := [
+	{"id": "wobbly_line", "trait": "perfect", "emotion": "frustrated", "also": ["mad", "disappointed"], "level": 4,
+		"story": "{pet} was drawing a picture for {friend}. Then one line went all wobbly.",
+		"hot": "It's ruined! It has to be perfect!",
+		"impulse": "Rip the picture into little bits", "then": "All the good parts get ripped up too. Now there is no picture at all.",
+		"clues": ["tight_paws", "hot_face", "tight_jaw"],
+		"helpful": ["It does not have to be perfect to be good.", "A wobbly line can turn into something new."],
+		"good": ["Turn the wobbly line into a flower", "Give it to {friend} just as it is"],
+		"bad": "Never draw again", "bad_why": "Then {pet} would miss out on all the fun of drawing.",
+		"ending": "{pet} turned the wobbly line into a curly vine. {friend} said it was the best part!"},
+	{"id": "wrong_answer", "trait": "perfect", "emotion": "embarrassed", "also": [], "level": 4,
+		"story": "At pet school, {pet} said the wrong answer out loud. Everybody heard.",
+		"hot": "Everyone thinks I am silly! I am never answering again!",
+		"impulse": "Hide under the table and not come out", "then": "Hiding makes the embarrassed feeling grow. And {pet} misses the fun part of class.",
+		"clues": ["red_cheeks", "hunched", "tummy"],
+		"helpful": ["Everybody gets answers wrong. That is how brains grow.", "A mistake means I am learning something new."],
+		"good": ["Say: Oops! Let me try again.", "Ask the teacher to explain it"],
+		"bad": "Never put a paw up again", "bad_why": "Then {pet} would not get to learn new things.",
+		"ending": "{pet} said \"Oops!\" and tried again. {friend} whispered: \"I got it wrong last week too.\""},
+	{"id": "start_over", "trait": "perfect", "emotion": "frustrated", "also": ["mad"], "level": 3,
+		"story": "{pet} keeps knocking down the sandcastle to start over. It is never just right.",
+		"hot": "It has to be PERFECT or it is no good!",
+		"impulse": "Stomp the castle flat again", "then": "Now playtime is nearly over, and there is still no castle.",
+		"clues": ["tight_jaw", "tight_paws", "fast_breath"],
+		"helpful": ["Good enough is good. I can stop fixing and start playing.", "Nothing is perfect, and that is OK."],
+		"good": ["Leave the bumpy tower and add a flag", "Ask {friend} what they like about it"],
+		"bad": "Keep starting over until bedtime", "bad_why": "Then there would be no time left to play in it.",
+		"ending": "{pet} left the bumpy tower just as it was. {friend} moved in a toy crab. Perfect for playing!"},
+	{"id": "scared_to_try", "trait": "perfect", "emotion": "worried", "also": ["embarrassed"], "level": 3,
+		"story": "{pet} wants to try the new balance log. But what if {pet} falls off?",
+		"hot": "If I can't do it right the first time, I won't do it at all.",
+		"impulse": "Say \"It looks boring\" and walk away", "then": "{pet} watches the others have fun, and the worry stays just as big.",
+		"clues": ["tummy", "fast_heart", "wobbly"],
+		"helpful": ["Nobody is good at new things right away.", "Falling off is part of learning. I can get back on."],
+		"good": ["Try just one tiny step", "Ask {friend} to hold a paw"],
+		"bad": "Wait until nobody is ever looking", "bad_why": "Then {pet} might never get a turn at all.",
+		"ending": "{pet} wobbled, fell off, and got back on. After five tries, {pet} made it across!"},
+	{"id": "tripped_show", "trait": "perfect", "emotion": "embarrassed", "also": ["sad"], "level": 3,
+		"story": "{pet} tripped in the middle of the dance show. Bonk!",
+		"hot": "Everybody saw! I can never dance again!",
+		"impulse": "Run off the stage and hide", "then": "The show goes on without {pet}, and the embarrassed feeling gets bigger.",
+		"clues": ["red_cheeks", "hunched", "fast_heart"],
+		"helpful": ["Everybody trips sometimes. It is no big deal.", "My friends still like me when I make a mistake."],
+		"good": ["Hop up and keep dancing", "Take a bow and smile"],
+		"bad": "Blame {friend} for being in the way", "bad_why": "{friend} did nothing wrong, and blaming would hurt.",
+		"ending": "{pet} hopped up and did a silly bow. Everybody clapped!"},
+	{"id": "one_wrong", "trait": "perfect", "emotion": "disappointed", "also": ["sad", "frustrated"], "level": 3,
+		"story": "{pet} got nine stars on the puzzle sheet. One puzzle was wrong.",
+		"hot": "I got one wrong. I am no good at this!",
+		"impulse": "Crumple up the whole sheet", "then": "The nine stars get crumpled too. Now {pet} feels even worse.",
+		"clues": ["heavy", "lump", "tears"],
+		"helpful": ["Nine stars is great. One miss shows me what to practice.", "I tried my best, and that is what matters."],
+		"good": ["Look at the tricky one and try it again", "Show {friend} the nine stars"],
+		"bad": "Hide the sheet so nobody sees", "bad_why": "Then nobody could help with the tricky one.",
+		"ending": "{pet} tried the tricky puzzle again and worked it out. Mistakes show us what to learn next!"},
+]
+
 ## Used for the "that was frustrating for us both" moments inside activities.
 const ACTIVITY_FRUSTRATION := {
 	"id": "activity", "emotion": "frustrated", "also": ["mad"], "level": 3,
@@ -319,10 +415,35 @@ const ACTIVITY_FRUSTRATION := {
 static func scenario_by_id(id: String) -> Dictionary:
 	if id == "activity":
 		return ACTIVITY_FRUSTRATION
-	for s in SCENARIOS:
+	for s in all_scenarios():
 		if s.id == id:
 			return s
 	return {}
+
+
+static func all_scenarios() -> Array:
+	return SCENARIOS + PERFECT_SCENARIOS
+
+
+static func trait_of(species: String) -> String:
+	return "perfect" if PERFECTIONISTS.has(species) else ""
+
+
+## How many different pets there are to collect (every animal in every look).
+static func roster_size() -> int:
+	return SPECIES.size() * (LOOK_ORDER.size() + 1)
+
+
+## Lines the child can record straight away: the pets' own words (stormy and
+## helpful thoughts). Everything else the game says turns up in the recording
+## booth after it has been heard once.
+static func voice_script() -> Array:
+	var out := ["Ahhh. I feel calm now.", "Ahhh. My feeling got smaller!"]
+	for s in all_scenarios() + [ACTIVITY_FRUSTRATION]:
+		for line in s.helpful + [s.hot]:
+			if not line.contains("{"):
+				out.append(line)
+	return out
 
 
 static func fill(text: String, pet: String, friend: String) -> String:

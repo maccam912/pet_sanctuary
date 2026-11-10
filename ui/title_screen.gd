@@ -124,7 +124,7 @@ func _slot_card(slot: int) -> Control:
 		return p
 	var icons := UI.hbox(0)
 	for i in mini(3, st.pets.size()):
-		icons.add_child(UI.pet_icon(st.pets[st.pets.size() - 1 - i].species, 92))
+		icons.add_child(UI.pet_picture(st.pets[st.pets.size() - 1 - i], 92))
 	v.add_child(icons)
 	v.add_child(UI.label("%d pets" % st.pets.size(), 30))
 	var hearts := UI.hbox(8)

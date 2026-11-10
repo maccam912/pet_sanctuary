@@ -17,9 +17,15 @@ Controls: tap things. Slide to look around, pinch (or mouse wheel) to zoom.
 ## What the child does
 
 - Runs the sanctuary: pet, feed, play fetch and dance with the pets, grow a
-  garden, and play four mini-games (Snack Time memory orders, Block Tower,
-  Match Cards, Hide & Seek in the 3D world).
-- Earns hearts, which welcome new pets (24 in all).
+  garden, and play seven mini-games (Snack Time memory orders, Block Tower,
+  Match Cards, Treasure Dig, Pet Band, Oops Art, and Hide & Seek in the 3D
+  world).
+- Earns hearts, which welcome new pets. The child picks each new friend from
+  three animals and names it. There are 96 to collect (24 animals, each in
+  four colours), and every friend costs more hearts than the last (30, 45,
+  60... up to 150), so a new arrival stays an event.
+- Gives the game its voice in the **Recording Booth**: an animal sound for
+  each animal and feeling, and the game's own lines (see below).
 - Every few minutes a pet gets a storm cloud over its head: a **feelings
   moment**. The child coaches the pet through it.
 
@@ -51,6 +57,31 @@ mini-games sometimes go wrong on purpose (wind knocks the tower down, the cards
 get mixed up). The buddy pet is frustrated too; they calm down together, with a
 bit of real frustration in the room, then get a fair retry. Frequency is set in
 the grown-ups menu (Off / Gentle / Medium / Lots; default Gentle).
+
+**Pets who want it perfect.** About a third of the animals (the pet card says
+"Likes things just right") get their own stories: a wobbly line in a drawing,
+a wrong answer in front of everyone, starting over again and again, being too
+scared to try. These add an eighth feeling, *embarrassed*. Two mini-games
+practice the same idea with no pet story at all: in Treasure Dig a wrong dig
+is the only way to get a clue (Hot / Warm / Cold), and in Oops Art every paint
+splat is turned into part of the picture. In Pet Band a wrong note just
+replays the tune. The messages are the ones used for perfectionism in child
+CBT: mistakes are how we learn, and good enough is good.
+
+**The child's voice.** In the Recording Booth the child records:
+
+- *Animal sounds*: one per animal and feeling (a missing feeling borrows a
+  close one, so a "mad" bark also covers "frustrated"). The pets use them in
+  the world, in feelings moments and as their notes in Pet Band.
+- *Voice lines*: the game's spoken text is cut into sentence-sized lines. The
+  booth offers the pets' own words first (stormy and helpful thoughts such as
+  "I can't do it YET."), then every line the game has spoken, most-heard
+  first. A recorded line is played instead of the read-aloud voice wherever
+  those words come up; anything not recorded yet is still read by the device.
+  Saying coping thoughts out loud is itself practice (self-instruction).
+
+Recordings are WAV files in the game's user folder (`voice/`), shared by all
+save slots, and never leave the device.
 
 ### The tools and where they come from
 
@@ -109,7 +140,8 @@ copy that is used if the main file is damaged.
 ## Code layout
 
 ```
-core/        pure logic, no engine nodes: content, save data, director, save store, adult gate
+core/        pure logic, no engine nodes: content, save data, director, save store,
+             voice store (recordings + cutting speech into lines), adult gate
 autoload/    Game (state + saving), Sfx (sound, music, read-aloud)
 ui/          theme + widgets, title, settings, grown-ups menu, toolbox
 world/       3D sanctuary, pets, HUD, director loop
@@ -140,7 +172,10 @@ check real mouse/touch input.
 
 - Text uses a rounded system font (Arial Rounded on Apple devices) and falls
   back to the platform default elsewhere.
-- Read-aloud uses the device's text-to-speech and is on by default.
+- Read-aloud uses the device's text-to-speech and is on by default. Lines
+  recorded in the booth replace it one line at a time.
+- Recording needs the microphone: the Android build asks for the permission
+  the first time the booth is opened, and macOS asks once per app.
 - Binary assets (models, images, audio) are stored with Git LFS: run
   `git lfs install` once before cloning.
 

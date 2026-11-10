@@ -67,7 +67,7 @@ func refresh() -> void:
 				b.text = "Thirsty!\nTap to water"
 				UI.recolor(b, UI.SKY)
 			4:
-				b.text = "Ready!\nPick it  +3"
+				b.text = "Ready!\nPick it  +2"
 				UI.recolor(b, UI.SUN)
 
 

@@ -22,6 +22,16 @@ var _current_music := ""
 var _streams := {}
 var _voice := ""
 var _tts_ok := false
+var _speech := 0            # goes up with every say() / hush(), so old speech stops
+var _tts_done := true
+var _line_player: AudioStreamPlayer    # the child's recorded voice lines
+var _animal_player: AudioStreamPlayer  # the child's recorded animal sounds
+var _mic: AudioStreamPlayer
+var _recorder: AudioEffectRecord
+var _record_bus := -1
+## The end-to-end test switches this off so it never touches the real
+## microphone (the system's permission question would stop it).
+var use_mic := true
 
 
 func _ready() -> void:
@@ -33,6 +43,10 @@ func _ready() -> void:
 	_music_b = AudioStreamPlayer.new()
 	add_child(_music_a)
 	add_child(_music_b)
+	_line_player = AudioStreamPlayer.new()
+	_animal_player = AudioStreamPlayer.new()
+	add_child(_line_player)
+	add_child(_animal_player)
 	_tts_ok = DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH) and DisplayServer.get_name() != "headless"
 	if _tts_ok:
 		var voices := DisplayServer.tts_get_voices_for_language("en")
@@ -43,6 +57,14 @@ func _ready() -> void:
 					_voice = v.id
 		else:
 			_tts_ok = false
+	if _tts_ok:
+		for event in [DisplayServer.TTS_UTTERANCE_ENDED, DisplayServer.TTS_UTTERANCE_CANCELED]:
+			DisplayServer.tts_set_utterance_callback(event, _on_tts_end)
+
+
+func _on_tts_end(id: int) -> void:
+	if id == _speech:
+		_tts_done = true
 
 
 func _stream(path: String) -> AudioStream:
@@ -107,14 +129,142 @@ func refresh_volume() -> void:
 	_music_a.volume_db = _music_db()
 
 
-## Read text aloud (if switched on). New speech replaces old speech.
+## Read text aloud (if switched on). New speech replaces old speech. Any line
+## the child has recorded in the booth is played in their voice instead.
 func say(text: String) -> void:
-	if not _tts_ok or not Game.settings.read_aloud or text.strip_edges() == "":
+	if text.strip_edges() == "":
 		return
-	DisplayServer.tts_stop()
-	DisplayServer.tts_speak(text, _voice, 80, 1.05, 0.9)
+	var parts := Game.voice.plan(text)
+	if not Game.settings.read_aloud:
+		return
+	hush()
+	var recorded := parts.any(func(p): return p.stream != null)
+	if not recorded and not _animal_player.playing:
+		if _tts_ok:
+			DisplayServer.tts_speak(text, _voice, 80, 1.05, 0.9)
+		return
+	_speak_parts(parts, _speech)
+
+
+## Plays a mix of recorded lines and read-aloud speech one after the other,
+## waiting for an animal sound to finish first.
+func _speak_parts(parts: Array, ticket: int) -> void:
+	while _animal_player.playing:
+		await get_tree().process_frame
+		if ticket != _speech:
+			return
+	for part in parts:
+		if part.stream != null:
+			_line_player.stream = part.stream
+			_line_player.volume_db = 0.0
+			_line_player.play()
+			while _line_player.playing:
+				await get_tree().process_frame
+				if ticket != _speech:
+					return
+		elif _tts_ok:
+			_tts_done = false
+			DisplayServer.tts_speak(part.text, _voice, 80, 1.05, 0.9, ticket)
+			var patience: float = 3.0 + part.text.length() * 0.12
+			while not _tts_done and patience > 0.0:
+				await get_tree().process_frame
+				patience -= get_process_delta_time()
+				if ticket != _speech:
+					return
+
+
+## The read-aloud voice says this, even if the child has recorded the line
+## (the booth's "hear it first" button).
+func read(text: String) -> void:
+	hush()
+	if _tts_ok:
+		DisplayServer.tts_speak(text, _voice, 80, 1.05, 0.9)
 
 
 func hush() -> void:
+	_speech += 1
+	_line_player.stop()
 	if _tts_ok:
 		DisplayServer.tts_stop()
+
+
+## Plays the child's recorded sound for this animal and feeling. Returns false
+## (and plays nothing) when there is no recording yet.
+func animal(species: String, emotion := "happy") -> bool:
+	var s := Game.voice.animal_stream(species, emotion)
+	if s == null or Game.settings.sfx <= 0.01:
+		return false
+	_animal_player.stream = s
+	_animal_player.volume_db = linear_to_db(Game.settings.sfx)
+	_animal_player.play()
+	return true
+
+
+## Plays any recording once (the booth's "play it back" button).
+func playback(stream: AudioStream) -> void:
+	hush()
+	_animal_player.stream = stream
+	_animal_player.volume_db = 0.0
+	_animal_player.play()
+
+
+# ------------------------------------------------------- recording ----
+
+## Switches the microphone on (only while the recording booth is open).
+func mic_open() -> void:
+	if not use_mic:
+		return
+	if _record_bus < 0:
+		# Microphone -> "Record" bus (captures it) -> silent bus, so it is never
+		# played back out of the speaker while recording.
+		AudioServer.add_bus()
+		var silent := AudioServer.bus_count - 1
+		AudioServer.set_bus_name(silent, "Silent")
+		AudioServer.set_bus_mute(silent, true)
+		AudioServer.add_bus()
+		_record_bus = AudioServer.bus_count - 1
+		AudioServer.set_bus_name(_record_bus, "Record")
+		AudioServer.set_bus_send(_record_bus, "Silent")
+		_recorder = AudioEffectRecord.new()
+		_recorder.format = AudioStreamWAV.FORMAT_16_BITS
+		AudioServer.add_bus_effect(_record_bus, _recorder)
+		_mic = AudioStreamPlayer.new()
+		_mic.stream = AudioStreamMicrophone.new()
+		_mic.bus = "Record"
+		add_child(_mic)
+	if OS.get_name() == "Android":
+		OS.request_permission("android.permission.RECORD_AUDIO")
+	_mic.play()
+
+
+func mic_close() -> void:
+	if _mic:
+		_recorder.set_recording_active(false)
+		_mic.stop()
+
+
+func record_start() -> void:
+	hush()
+	_animal_player.stop()
+	if _mic == null:
+		return
+	if not _mic.playing:
+		_mic.play()
+	_recorder.set_recording_active(true)
+
+
+## Stops recording and returns the tidied take (null if nothing was heard).
+func record_stop() -> AudioStreamWAV:
+	if _recorder == null or not _recorder.is_recording_active():
+		return null
+	var take := _recorder.get_recording()
+	_recorder.set_recording_active(false)
+	return VoiceStore.clean(take)
+
+
+## How loud the microphone is right now, 0..1 (for the booth's level lights).
+func mic_level() -> float:
+	if _record_bus < 0:
+		return 0.0
+	var db := maxf(AudioServer.get_bus_peak_volume_left_db(_record_bus, 0), AudioServer.get_bus_peak_volume_right_db(_record_bus, 0))
+	return clampf((db + 50.0) / 45.0, 0.0, 1.0)

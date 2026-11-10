@@ -27,6 +27,14 @@ Practicing: your child chooses the tool and leads the pet.
 Learned: the pet often asks for the tool by itself, and your child simply practices along. This is the goal: lots of repetitions.
 Skills move up on their own, or set them by hand on the Skills tab.
 
+PETS WHO WANT IT PERFECT
+
+Some pets (the pet card says "Likes things just right") get stories about wobbly drawings, wrong answers and being too scared to try. Two mini-games practice the same idea: in Treasure Dig every wrong dig is a clue, and in Oops Art every paint splat turns into part of the picture. The message is the one therapists use for perfectionism: mistakes are how we learn, and "good enough" is good. You can help by cheerfully pointing out your own small mistakes: "Oops! I spilled. Oh well, I'll wipe it up."
+
+YOUR CHILD'S VOICE
+
+In the Recording Booth your child can record animal sounds for each pet and feeling, and record the game's lines in their own voice. The game then plays those instead of the computer voice. Saying the pets' helpful thoughts out loud ("I can't do it YET") is real practice of coping self-talk. Recordings never leave this device.
+
 TRICKY MOMENTS
 
 Knowing the right answer while calm is the easy part. Using it while upset is the hard part. So sometimes a mini-game goes wrong on purpose (the wind knocks the tower over, the cards get mixed up). The pet gets frustrated too, and they calm down together, with a little real frustration in the room. Choose how often on the Child Settings tab. Stay close the first few times, and turn it down if it is too much.
@@ -175,7 +183,7 @@ func _show_child_settings() -> void:
 	var focus_row := UI.hbox(8)
 	for e in Content.BIG_FEELINGS:
 		var b := UI.button(Content.EMOTIONS[e].label, UI.SUN if s.focus_enabled(e) else UI.PAPER, 20)
-		b.custom_minimum_size = Vector2(150, 54)
+		b.custom_minimum_size = Vector2(134, 54)
 		b.pressed.connect(func():
 			s.adult.focus[e] = not s.focus_enabled(e)
 			UI.recolor(b, UI.SUN if s.focus_enabled(e) else UI.PAPER))

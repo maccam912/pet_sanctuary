@@ -32,7 +32,7 @@ func _ready() -> void:
 	plate.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	plate.add_child(UI.label(buddy.name, 30))
 	left.add_child(plate)
-	stage = PetStage.new(buddy.species, 300)
+	stage = PetStage.new(buddy.species, 300, buddy.get("look", ""))
 	left.add_child(stage)
 	_status = UI.text("", 26)
 	_status.custom_minimum_size = Vector2(280, 120)
@@ -87,6 +87,7 @@ func wants_setback() -> bool:
 func calm(what_happened: String) -> void:
 	stage.play("gesture-negative", true)
 	Sfx.play("oops")
+	Sfx.animal(buddy.species, "frustrated")
 	await get_tree().create_timer(0.9).timeout
 	await host.calm_together(what_happened, buddy)
 	stage.play("idle")
@@ -97,6 +98,7 @@ func win(hearts: int, message: String) -> void:
 		c.queue_free()
 	stage.play("dance")
 	Sfx.jingle(4)
+	Sfx.animal(buddy.species, "happy")
 	say(message)
 	var v := UI.vbox(16)
 	UI.full(v)

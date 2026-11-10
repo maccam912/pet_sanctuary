@@ -9,6 +9,8 @@ const FRUSTRATION_CHANCE := [0.0, 0.12, 0.25, 0.45]  # by adult "frustration_lev
 const LEARN_TO_PRACTICE := 3   # practices before Learning -> Practicing
 const PRACTICE_TO_LEARNED := 9 # practices before Practicing -> Learned
 const RECENT_MEMORY := 6
+const TRAIT_STORY_CHANCE := 0.5
+const OFFERS := 3  # animals to choose between when a new friend arrives
 
 
 ## Seconds of play until the next pet needs help.
@@ -29,7 +31,9 @@ static func unlocked_techniques(state: GameState) -> Array:
 
 ## Scenario for a regular feelings moment. Skips recently seen ones, feelings the
 ## adult switched off, and scenarios no unlocked tool fits.
-static func pick_scenario(state: GameState, rng: RandomNumberGenerator, tag := "") -> Dictionary:
+## `pet_trait` is the trait of the pet the story is for: "perfect" pets get a
+## perfectionism story about half the time, and other pets never do.
+static func pick_scenario(state: GameState, rng: RandomNumberGenerator, tag := "", pet_trait := "") -> Dictionary:
 	if tag != "":
 		for s in Content.SCENARIOS:
 			if s.get("tag", "") == tag:
@@ -37,8 +41,9 @@ static func pick_scenario(state: GameState, rng: RandomNumberGenerator, tag := "
 	var unlocked := unlocked_techniques(state)
 	var pool := []
 	var fallback := []
-	for s in Content.SCENARIOS:
-		if s.has("tag"):
+	var own := []  # fresh stories written for this pet's trait
+	for s in Content.all_scenarios():
+		if s.has("tag") or s.get("trait", pet_trait) != pet_trait:
 			continue
 		if not _any_tool_fits(unlocked, s.emotion):
 			continue
@@ -46,6 +51,10 @@ static func pick_scenario(state: GameState, rng: RandomNumberGenerator, tag := "
 		if state.recent_scenarios.has(s.id) or not state.focus_enabled(s.emotion):
 			continue
 		pool.append(s)
+		if s.has("trait"):
+			own.append(s)
+	if not own.is_empty() and rng.randf() < TRAIT_STORY_CHANCE:
+		pool = own
 	if pool.is_empty():
 		for s in fallback:
 			if state.focus_enabled(s.emotion):
@@ -55,6 +64,41 @@ static func pick_scenario(state: GameState, rng: RandomNumberGenerator, tag := "
 	if pool.is_empty():
 		pool = Content.SCENARIOS.filter(func(s): return not s.has("tag"))
 	return pool[rng.randi() % pool.size()]
+
+
+## The animals the child can choose between for the next arrival: mostly
+## everyday animals, plus one in a special colour. Stays the same until a pet
+## is welcomed, so closing and reopening the picker does not re-roll it.
+static func arrival_offers(state: GameState) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(state.created) + state.arrivals_done * 7919
+	var plain := []
+	var special := []
+	for sp in Content.SPECIES:
+		if not state.has_pet(sp):
+			plain.append({"species": sp, "look": ""})
+		for look in Content.LOOK_ORDER:
+			if not state.has_pet(sp, look):
+				special.append({"species": sp, "look": look})
+	_shuffle(plain, rng)
+	_shuffle(special, rng)
+	var out: Array = plain.slice(0, OFFERS - 1)
+	for o in special:
+		if out.size() >= OFFERS:
+			break
+		# Three different animals to choose from, never the same one twice.
+		if not out.any(func(x): return x.species == o.species):
+			out.append(o)
+	var names: Array = Content.EXTRA_NAMES.duplicate()
+	_shuffle(names, rng)
+	for o in out:
+		o.name = Content.SPECIES[o.species]
+		if o.look != "" or state.name_taken(o.name):
+			for n in names:
+				if not state.name_taken(n) and not out.any(func(x): return x.get("name", "") == n):
+					o.name = n
+					break
+	return out
 
 
 static func _any_tool_fits(unlocked: Array, emotion: String) -> bool:

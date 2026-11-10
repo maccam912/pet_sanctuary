@@ -15,10 +15,15 @@ const STATIONS := {
 	"garden": Vector3(8.5, 0, 8.5),
 	"calm": Vector3(-9.0, 0, 7.5),
 	"gate": Vector3(0, 0, 13.0),
+	"booth": Vector3(-4.4, 0, 6.2),
+	"dig": Vector3(-3.4, 0, -3.4),
+	"band": Vector3(-12.2, 0, -1.8),
+	"art": Vector3(4.8, 0, 6.6),
 }
 const STATION_LABELS := {
 	"snack": "Snack Time", "blocks": "Block Tower", "cards": "Match Cards",
 	"hide": "Hide & Seek", "garden": "Garden", "calm": "Calm Corner",
+	"booth": "Recording Booth", "dig": "Treasure Dig", "band": "Pet Band", "art": "Oops Art",
 }
 const POND := Vector3(9.5, 0, -6.5)
 const POND_R := 3.8
@@ -107,7 +112,7 @@ func _build_ground() -> void:
 	yard.scale = Vector3(1.0, 1.0, 0.82)
 	var sand := Color("ecd093")
 	disc(Vector3(0, 0, 1), 3.2, sand, 0.06)
-	for id in ["snack", "blocks", "cards", "garden", "calm", "gate"]:
+	for id in ["snack", "blocks", "cards", "garden", "calm", "gate", "booth", "dig", "band", "art"]:
 		var to: Vector3 = STATIONS[id]
 		var from := Vector3(0, 0, 1)
 		var steps := int(from.distance_to(to) / 1.5)
@@ -229,6 +234,48 @@ func _build_stations() -> void:
 	place("flower_purpleA", calm + Vector3(-3.2, 0, 1.0), 0, 5.0)
 	place("flower_purpleB", calm + Vector3(3.6, 0, 1.4), 0, 5.0)
 	place("mushroom_tanGroup", calm + Vector3(-2.6, 0, 2.0), 0, 5.0)
+	# Recording booth: a little tent with a big microphone outside.
+	var booth: Vector3 = STATIONS.booth
+	place("tent_smallOpen", booth + Vector3(-0.9, 0, -0.6), 0.4, 5.0)
+	_box(booth + Vector3(1.2, 0.9, 0.4), Vector3(0.16, 1.8, 0.16), UI.INK_SOFT)
+	var mic := MeshInstance3D.new()
+	var ball := SphereMesh.new()
+	ball.radius = 0.42
+	ball.height = 0.84
+	mic.mesh = ball
+	mic.material_override = flat_mat(UI.CORAL, 0.5)
+	mic.position = booth + Vector3(1.2, 2.0, 0.4)
+	add_child(mic)
+	# Treasure dig: a patch of dirt mounds.
+	var dig: Vector3 = STATIONS.dig
+	for i in 5:
+		place("crops_dirtSingle", dig + Vector3((i % 3 - 1) * 1.5, 0, (i / 3) * 1.4 - 0.6), _rng.randf() * TAU, 4.0)
+	place("rock_smallA", dig + Vector3(-2.0, 0, 0.9), 0.8)
+	# Pet band: stump drums and a log to sit on.
+	var band: Vector3 = STATIONS.band
+	place("stump_round", band + Vector3(-0.9, 0, 0), 0, 5.5)
+	place("stump_round", band + Vector3(0.7, 0, -0.5), 0, 4.0)
+	place("log", band + Vector3(0.2, 0, 1.4), 1.5)
+	# Oops art: an easel with a splattery painting.
+	var art: Vector3 = STATIONS.art
+	for side: float in [-0.6, 0.6]:
+		_box(art + Vector3(side, 1.0, 0.25), Vector3(0.14, 2.0, 0.14), Color("b98a5e"))
+	var board := _box(art + Vector3(0, 1.5, 0.12), Vector3(1.9, 1.5, 0.1), UI.WHITE)
+	board.rotation.x = -0.15
+	for i in 5:
+		var blob := _box(art + Vector3(-0.6 + 0.3 * i, 1.2 + 0.25 * (i % 3), 0.22 - 0.035 * (i % 3)), Vector3(0.34, 0.34, 0.06), [UI.CORAL, UI.SKY, UI.SUN, UI.LEAF, UI.LAVENDER][i])
+		blob.rotation.z = _rng.randf() * TAU
+
+
+func _box(pos: Vector3, box_size: Vector3, color: Color) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = box_size
+	mi.mesh = mesh
+	mi.material_override = flat_mat(color, 0.6)
+	mi.position = pos
+	add_child(mi)
+	return mi
 
 
 func _scatter_details() -> void:
@@ -265,6 +312,9 @@ func walkable(p: Vector3) -> bool:
 		return false
 	for id in ["snack", "blocks", "cards", "garden", "calm"]:
 		if p.distance_to(STATIONS[id]) < 3.0:
+			return false
+	for id in ["booth", "dig", "band", "art"]:
+		if p.distance_to(STATIONS[id]) < 2.4:
 			return false
 	return true
 

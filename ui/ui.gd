@@ -209,8 +209,15 @@ static func centered(content: Control, min_size := Vector2(720, 0)) -> CenterCon
 	return cc
 
 
-static func pet_icon(species: String, size := 96) -> TextureRect:
-	return picture("res://assets/pet_icons/animal-%s.png" % species, size)
+static func pet_icon(species: String, size := 96, look := "") -> TextureRect:
+	var t := picture("res://assets/pet_icons/animal-%s.png" % species, size)
+	t.material = PetLook.icon_material(look)
+	return t
+
+
+## The picture for one of the child's own pets (a save-data entry).
+static func pet_picture(pet: Dictionary, size := 96) -> TextureRect:
+	return pet_icon(pet.species, size, pet.get("look", ""))
 
 
 static func food_icon(food: String, size := 96) -> TextureRect:

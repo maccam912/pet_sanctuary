@@ -6,6 +6,7 @@ signal hearts_changed(total: int)
 const SETTINGS_PATH := "user://settings.json"
 
 var store: SaveStore
+var voice: VoiceStore
 var state: GameState
 var slot := 0
 var rng := RandomNumberGenerator.new()
@@ -15,6 +16,7 @@ var settings := {"music": 0.6, "sfx": 0.9, "read_aloud": true, "pin_hash": ""}
 
 func _ready() -> void:
 	store = SaveStore.new()
+	voice = VoiceStore.new()
 	rng.randomize()
 	_load_settings()
 
@@ -52,6 +54,7 @@ func load_game(slot_number: int) -> bool:
 func save() -> void:
 	if state != null and slot > 0:
 		store.save(slot, state)
+	voice.save_heard()
 
 
 func close_game() -> void:

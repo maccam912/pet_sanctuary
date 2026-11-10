@@ -5,7 +5,7 @@ extends RefCounted
 const VERSION := 1
 
 var hearts := 0
-var pets: Array = []            # [{species, name, friendship}]
+var pets: Array = []            # [{species, name, friendship, look}]
 var techniques := {}            # id -> {stage, count}
 var recent_scenarios: Array = []  # ids, newest last
 var moments_done := 0
@@ -40,7 +40,7 @@ var adult := {
 static func new_game() -> GameState:
 	var s := GameState.new()
 	for sp in Content.STARTER_SPECIES:
-		s.pets.append({"species": sp, "name": Content.SPECIES[sp], "friendship": 0})
+		s.pets.append({"species": sp, "name": Content.SPECIES[sp], "friendship": 0, "look": ""})
 	for id in Content.TECHNIQUE_ORDER:
 		s.techniques[id] = {"stage": Content.STAGE_LOCKED, "count": 0}
 	s.techniques["balloon"].stage = Content.STAGE_LEARNING
@@ -70,8 +70,9 @@ static func from_dict(d: Dictionary) -> GameState:
 	if d.get("pets") is Array:
 		for p in d.pets:
 			if p is Dictionary and Content.SPECIES.has(p.get("species", "")):
+				var look := str(p.get("look", ""))
 				loaded_pets.append({"species": p.species, "name": str(p.get("name", Content.SPECIES[p.species])),
-					"friendship": int(p.get("friendship", 0))})
+					"friendship": int(p.get("friendship", 0)), "look": look if Content.LOOKS.has(look) else ""})
 	if not loaded_pets.is_empty():
 		s.pets = loaded_pets
 	var t: Dictionary = d.get("techniques", {})
@@ -110,30 +111,48 @@ func count_of(tech: String) -> int:
 	return int(techniques[tech].count)
 
 
-func has_species(sp: String) -> bool:
+func has_pet(sp: String, look := "") -> bool:
 	for p in pets:
-		if p.species == sp:
+		if p.species == sp and p.get("look", "") == look:
 			return true
 	return false
 
 
-func next_arrival() -> String:
-	for sp in Content.ARRIVAL_ORDER:
-		if not has_species(sp):
-			return sp
-	return ""
+## Pets still out there to invite (every animal in every look).
+func roster_left() -> int:
+	return Content.roster_size() - pets.size()
 
 
+## Hearts for the next new friend. Each friend costs more than the last, so a
+## new arrival stays a big event: about one or two a play session, not a stream.
 func arrival_cost() -> int:
-	return mini(12 + 4 * (pets.size() - Content.STARTER_SPECIES.size()), 40)
+	return mini(30 + 15 * maxi(0, pets.size() - Content.STARTER_SPECIES.size()), 150)
 
 
 func can_welcome() -> bool:
-	return next_arrival() != "" and hearts >= arrival_cost()
+	return roster_left() > 0 and hearts >= arrival_cost()
 
 
-func add_pet(sp: String) -> Dictionary:
-	var p := {"species": sp, "name": Content.SPECIES[sp], "friendship": 0}
+func name_taken(pet_name: String) -> bool:
+	for p in pets:
+		if str(p.name).to_lower() == pet_name.to_lower():
+			return true
+	return false
+
+
+## Keeps a typed name short and safe to drop into story text.
+static func clean_name(typed: String, fallback: String) -> String:
+	var out := ""
+	for ch in typed.strip_edges():
+		if ch in "{}%\"\\\n\t":
+			continue
+		out += ch
+	out = out.substr(0, 12).strip_edges()
+	return out if out != "" else fallback
+
+
+func add_pet(sp: String, look := "", pet_name := "") -> Dictionary:
+	var p := {"species": sp, "name": clean_name(pet_name, Content.SPECIES[sp]), "friendship": 0, "look": look}
 	pets.append(p)
 	arrivals_done += 1
 	return p
