@@ -54,6 +54,9 @@ func _ready() -> void:
 	done.pressed.connect(close)
 	head.add_child(done)
 	v.add_child(head)
+	for other in Game.other_voices():
+		if other.id == Game.state.voice.from:
+			v.add_child(UI.label("You are hearing %s's voice in the game. You can pick yours in Settings." % other.name, 20, UI.INK_SOFT))
 	_body = Control.new()
 	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(_body)

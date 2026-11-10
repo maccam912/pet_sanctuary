@@ -26,6 +26,8 @@ Controls: tap things. Slide to look around, pinch (or mouse wheel) to zoom.
   60... up to 150), so a new arrival stays an event.
 - Gives the game its voice in the **Recording Booth**: an animal sound for
   each animal and feeling, and the game's own lines (see below).
+- Has their own profile: each save belongs to one child, asks their name the
+  first time, and keeps their own recordings.
 - Every few minutes a pet gets a storm cloud over its head: a **feelings
   moment**. The child coaches the pet through it.
 
@@ -80,8 +82,12 @@ CBT: mistakes are how we learn, and good enough is good.
   those words come up; anything not recorded yet is still read by the device.
   Saying coping thoughts out loud is itself practice (self-instruction).
 
-Recordings are WAV files in the game's user folder (`voice/`), shared by all
-save slots, and never leave the device.
+Each save keeps its own recordings, so brothers and sisters each have their
+own voice. In Settings a child can choose **whose voice** to hear (theirs or a
+sibling's recordings) and a **reading voice**: one of up to six of the
+device's read-aloud voices, numbered, so they pick by ear. Recordings are WAV
+files in the game's user folder (`saves/voices/<profile id>/`) and only leave
+the device when a grown-up exports them.
 
 ### The tools and where they come from
 
@@ -131,8 +137,16 @@ Settings (gear) -> Grown-ups. Guarded by a multiplication question, or a
   which feelings to include, the "how about you?" check-in, play-time reminder.
 - **Progress** - practice counts, first-try accuracy, tool-vs-urge choices,
   and the child's own feeling check-ins.
-- **Saves & PIN** - three save slots. Deleting is only possible here, and a
-  deleted save goes to a recycle bin it can be restored from.
+- **Saves & PIN** - three save slots, each with the child's name (rename
+  here). Deleting is only possible here, and a deleted save goes to a recycle
+  bin it can be restored from (with its recordings; emptying the bin deletes
+  them).
+- **Move to another tablet** (on the same tab) - **Export** writes one
+  child's sanctuary and all of their recordings to a single `.zip` file through
+  the system file picker (on Android it can save to Downloads, Google Drive and
+  so on). On the other device, **Import** reads it and asks where it goes: an
+  empty save, in place of another save (which goes to the recycle bin), or
+  *recordings only*, added to a child who already has a sanctuary there.
 
 Saves autosave every 20 seconds and on exit, written atomically with a backup
 copy that is used if the main file is damaged.
@@ -141,7 +155,8 @@ copy that is used if the main file is damaged.
 
 ```
 core/        pure logic, no engine nodes: content, save data, director, save store,
-             voice store (recordings + cutting speech into lines), adult gate
+             voice store (recordings + cutting speech into lines), profile pack
+             (export/import), adult gate
 autoload/    Game (state + saving), Sfx (sound, music, read-aloud)
 ui/          theme + widgets, title, settings, grown-ups menu, toolbox
 world/       3D sanctuary, pets, HUD, director loop
@@ -176,6 +191,12 @@ check real mouse/touch input.
   recorded in the booth replace it one line at a time.
 - Recording needs the microphone: the Android build asks for the permission
   the first time the booth is opened, and macOS asks once per app.
+- The booth reads the microphone straight from the audio server
+  (`AudioServer.get_input_frames`). Recording through an `AudioStreamMicrophone`
+  player and a record bus made some takes stutter: that player's read position
+  is never re-synced to the microphone and can drift into old buffer data.
+- Recordings made before profiles existed (in `voice/`) are copied into every
+  existing save the first time this version starts.
 - Binary assets (models, images, audio) are stored with Git LFS: run
   `git lfs install` once before cloning.
 

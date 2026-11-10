@@ -1,6 +1,7 @@
 class_name SettingsPanel
 extends Control
-## Kid-safe settings: sound, music, read-aloud. Grown-up options sit behind the gate.
+## Kid-safe settings: sound, music, read-aloud and (in a game) whose voice to
+## hear. Grown-up options sit behind the gate.
 
 signal closed
 signal quit_to_title
@@ -40,6 +41,12 @@ func _ready() -> void:
 			Sfx.hush())
 	read_row.add_child(toggle)
 	v.add_child(read_row)
+	if in_game:
+		var others := Game.other_voices()
+		if not others.is_empty():
+			v.add_child(_voice_row(others))
+		if not Sfx.reader_voices().is_empty():
+			v.add_child(_reader_row())
 	var row := UI.hbox()
 	var adult := UI.button("Grown-ups", UI.LAVENDER, 26)
 	adult.custom_minimum_size = Vector2(230, 76)
@@ -58,6 +65,52 @@ func _ready() -> void:
 	done.pressed.connect(func(): closed.emit(); queue_free())
 	v.add_child(done)
 	add_child(UI.centered(v, Vector2(640, 0)))
+
+
+## Whose recordings the game plays: this child's own, or a brother's or sister's.
+func _voice_row(others: Array) -> Control:
+	var choices := [{"id": "", "name": "Mine"}] + others
+	return _pick_row("Whose voice?", choices.map(func(c): return c.name), 130,
+		func(): return choices.map(func(c): return c.id).find(Game.state.voice.from),
+		func(i: int):
+			Game.state.voice.from = choices[i].id
+			Game.open_voices()
+			var sample := Game.listen.sample()
+			if sample:
+				Sfx.playback(sample))
+
+
+## The computer voice that reads every line nobody has recorded.
+func _reader_row() -> Control:
+	var ids := Sfx.reader_voices()
+	return _pick_row("Reading voice", range(1, ids.size() + 1).map(func(n): return str(n)), 62,
+		func(): return maxi(0, ids.find(Game.state.voice.reader)),
+		func(i: int):
+			Game.state.voice.reader = ids[i]
+			Sfx.read("Hi! I can read to you in this voice."))
+
+
+## A label and a row of buttons where the current choice is lit.
+func _pick_row(text: String, names: Array, width: float, current: Callable, pick: Callable) -> Control:
+	var row := UI.hbox(8)
+	var l := UI.label(text, 30, UI.INK, false)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(l)
+	var buttons: Array[Button] = []
+	for i in names.size():
+		var b := UI.button(names[i], UI.PAPER, 24)
+		b.custom_minimum_size = Vector2(width, 64)
+		row.add_child(b)
+		buttons.append(b)
+	var paint := func():
+		for i in buttons.size():
+			UI.recolor(buttons[i], UI.SUN if i == current.call() else UI.PAPER)
+	for i in buttons.size():
+		buttons[i].pressed.connect(func():
+			pick.call(i)
+			paint.call())
+	paint.call()
+	return row
 
 
 func _slider_row(text: String, key: String) -> Control:

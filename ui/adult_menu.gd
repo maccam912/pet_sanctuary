@@ -1,7 +1,8 @@
 class_name AdultMenu
 extends Control
 ## The grown-ups area (always opened through AdultGateDialog).
-## Guide, per-child skills and settings, progress, and save-file management.
+## Guide, per-child skills and settings, progress, and save-file management
+## (including moving a child's save and recordings to another tablet).
 
 signal closed
 
@@ -33,7 +34,7 @@ Some pets (the pet card says "Likes things just right") get stories about wobbly
 
 YOUR CHILD'S VOICE
 
-In the Recording Booth your child can record animal sounds for each pet and feeling, and record the game's lines in their own voice. The game then plays those instead of the computer voice. Saying the pets' helpful thoughts out loud ("I can't do it YET") is real practice of coping self-talk. Recordings never leave this device.
+In the Recording Booth your child can record animal sounds for each pet and feeling, and record the game's lines in their own voice. The game then plays those instead of the computer voice. Saying the pets' helpful thoughts out loud ("I can't do it YET") is real practice of coping self-talk. Each save keeps its own recordings, so brothers and sisters each have their own voice; in Settings a child can choose to hear a sibling's recordings instead, and pick the computer voice that reads everything else. Recordings stay on this device unless you export them (Saves & PIN).
 
 TRICKY MOMENTS
 
@@ -52,6 +53,7 @@ This game is practice, not treatment. If big feelings are getting in the way of 
 var _body: VBoxContainer
 var _tabs := {}
 var _tab_row: HBoxContainer
+var _notice := ""  # shown once at the top of the Saves tab
 
 
 func _ready() -> void:
@@ -124,6 +126,10 @@ func _text(text: String, size := 22, color := UI.INK) -> Label:
 
 func _times(n: int) -> String:
 	return "1 time" if n == 1 else "%d times" % n
+
+
+func _recordings(n: int) -> String:
+	return "1 recording" if n == 1 else "%d recordings" % n
 
 
 func _show_guide() -> void:
@@ -222,6 +228,9 @@ func _show_progress() -> void:
 
 
 func _show_saves() -> void:
+	if _notice != "":
+		_text(_notice, 22, UI.LEAF.darkened(0.4))
+		_notice = ""
 	# PIN
 	var pin_row := UI.hbox(10)
 	var pin_edit := LineEdit.new()
@@ -257,24 +266,50 @@ func _show_saves() -> void:
 		var st := Game.store.load_slot(slot)
 		if st == null:
 			row.add_child(UI.label("Empty", 20, UI.INK_SOFT, false))
-		else:
-			row.add_child(UI.label("%d pets, %d hearts, played %s, last played %s" % [st.pets.size(), st.hearts, st.playtime_text(), st.last_played.replace("T", " ")], 20, UI.INK, false))
+			_setting("Save %d" % slot, "", row)
+			continue
+		var name_edit := LineEdit.new()
+		name_edit.text = st.child_name
+		name_edit.placeholder_text = "Child's name"
+		name_edit.max_length = 12
+		name_edit.custom_minimum_size = Vector2(200, 54)
+		row.add_child(name_edit)
+		var rename := UI.button("Rename", UI.PAPER, 20)
+		rename.custom_minimum_size = Vector2(130, 54)
+		rename.pressed.connect(func():
+			var new_name := GameState.clean_name(name_edit.text, "")
 			if slot == Game.slot:
-				row.add_child(UI.label("(in use now)", 20, UI.INK_SOFT, false))
+				Game.state.child_name = new_name
+				Game.save()
 			else:
-				var del := UI.button("Delete", UI.CORAL, 20)
-				del.custom_minimum_size = Vector2(130, 54)
-				var armed := [false]
-				del.pressed.connect(func():
-					if not armed[0]:
-						armed[0] = true
-						del.text = "Really delete?"
-						del.custom_minimum_size.x = 220
-						return
-					Game.store.delete_to_trash(slot)
-					_select("Saves & PIN"))
-				row.add_child(del)
-		_setting("Save %d" % slot, "", row)
+				st.child_name = new_name
+				Game.store.save(slot, st)
+			_select("Saves & PIN"))
+		row.add_child(rename)
+		var export := UI.button("Export", UI.SKY, 20)
+		export.custom_minimum_size = Vector2(130, 54)
+		export.pressed.connect(_export.bind(slot))
+		row.add_child(export)
+		if slot == Game.slot:
+			row.add_child(UI.label("(in use now)", 20, UI.INK_SOFT, false))
+		else:
+			var del := UI.button("Delete", UI.CORAL, 20)
+			del.custom_minimum_size = Vector2(130, 54)
+			var armed := [false]
+			del.pressed.connect(func():
+				if not armed[0]:
+					armed[0] = true
+					del.text = "Really delete?"
+					del.custom_minimum_size.x = 220
+					return
+				Game.store.delete_to_trash(slot)
+				_select("Saves & PIN"))
+			row.add_child(del)
+		_setting("Save %d" % slot + (": " + st.child_name if st.child_name != "" else ""), _summary(st), row)
+	var import := UI.button("Import from a file", UI.SKY, 20)
+	import.custom_minimum_size = Vector2(260, 54)
+	import.pressed.connect(_import)
+	_setting("Move to another tablet", "Export saves one child's sanctuary and all of their recordings as a single .zip file. Put it where the other tablet can reach it (Google Drive, email, a USB stick), then on the other tablet open Grown-ups, Saves & PIN, and tap Import.", import)
 	# Trash
 	var trash := Game.store.list_trash()
 	if trash.is_empty():
@@ -303,3 +338,115 @@ func _show_saves() -> void:
 		Game.store.empty_trash()
 		_select("Saves & PIN"))
 	_setting("Delete forever", "", empty)
+
+
+func _summary(st: GameState) -> String:
+	var recordings := VoiceStore.new(Game.store.voice_dir(st.profile_id)).count()
+	return "%d pets, %d hearts, %s, played %s, last played %s" % [st.pets.size(), st.hearts, _recordings(recordings), st.playtime_text(), st.last_played.replace("T", " ")]
+
+
+func _export(slot: int) -> void:
+	if slot == Game.slot:
+		Game.save()
+	var st := Game.store.load_slot(slot)
+	_pick_file(true, ProfilePack.file_name(st, slot), func(path: String):
+		var err := ProfilePack.export_slot(Game.store, slot, path)
+		_notice = "Exported %s. Now open it on the other tablet." % ProfilePack.file_name(st, slot) if err == OK else "Could not write the file (%s)." % error_string(err)
+		_select("Saves & PIN"))
+
+
+## Opens the system's file picker (on Android it reaches Downloads, Google
+## Drive and so on), or Godot's own one where there is none.
+func _pick_file(saving: bool, file_name: String, done: Callable) -> void:
+	var filters := PackedStringArray(["*.zip ; Sunny Paws save"])
+	if OS.get_name() == "Android" and not saving:
+		filters = PackedStringArray()  # a file from a cloud drive may not be marked as a zip
+	var picked := func(path: String):
+		if is_inside_tree():
+			done.call(path)
+	if DisplayServer.has_feature(DisplayServer.FEATURE_NATIVE_DIALOG_FILE):
+		var mode := DisplayServer.FILE_DIALOG_MODE_SAVE_FILE if saving else DisplayServer.FILE_DIALOG_MODE_OPEN_FILE
+		DisplayServer.file_dialog_show("", OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS), file_name, false, mode, filters,
+			func(ok: bool, paths: PackedStringArray, _filter: int):
+				if ok and not paths.is_empty():
+					picked.call_deferred(paths[0]))
+		return
+	var dialog := FileDialog.new()
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE if saving else FileDialog.FILE_MODE_OPEN_FILE
+	dialog.filters = filters
+	dialog.current_dir = OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS)
+	dialog.current_file = file_name
+	dialog.file_selected.connect(picked)
+	dialog.visibility_changed.connect(func():
+		if not dialog.visible:
+			dialog.queue_free())
+	add_child(dialog)
+	dialog.popup_centered_ratio(0.8)
+
+
+func _import() -> void:
+	_pick_file(false, "", func(path: String):
+		var pack := ProfilePack.read(path, Game.store.base_dir)
+		if pack.is_empty():
+			_notice = "That file is not a Sunny Paws save. Pick the .zip made by Export."
+			_select("Saves & PIN")
+		else:
+			show_import(pack))
+
+
+## Where should the imported save go? A free save, in place of another one
+## (which goes to the recycle bin), or only its recordings added to a child
+## who already has a sanctuary here.
+func show_import(pack: Dictionary) -> void:
+	for c in _body.get_children():
+		c.queue_free()
+	var incoming: GameState = pack.state
+	var who := incoming.child_name if incoming.child_name != "" else "The sanctuary"
+	_text("In the file: %s's sanctuary. %s" % [incoming.child_name, _summary_of_pack(pack)] if incoming.child_name != "" else "In the file: " + _summary_of_pack(pack), 26)
+	_text("Where should it go?", 22, UI.INK_SOFT)
+	for slot in range(1, SaveStore.SLOTS + 1):
+		var st := Game.store.load_slot(slot)
+		var row := UI.hbox(10)
+		if st == null:
+			row.add_child(_import_button("Put it here", UI.LEAF, func():
+				ProfilePack.import_profile(Game.store, pack, slot)
+				return "%s is in Save %d with %s." % [who, slot, _recordings(pack.recordings)]))
+			_setting("Save %d (empty)" % slot, "", row)
+			continue
+		if slot != Game.slot:
+			row.add_child(_import_button("Replace this save", UI.CORAL, func():
+				ProfilePack.import_profile(Game.store, pack, slot)
+				return "%s replaced Save %d. The old save is in the recycle bin." % [who, slot], true))
+		row.add_child(_import_button("Add only the recordings", UI.SKY, func():
+			ProfilePack.add_recordings(Game.store, pack, st.profile_id)
+			return "Added %s to Save %d. Its sanctuary did not change." % [_recordings(pack.recordings), slot]))
+		_setting("Save %d" % slot + (": " + st.child_name if st.child_name != "" else ""), _summary(st), row)
+	var cancel := UI.button("Cancel", UI.PAPER, 20)
+	cancel.custom_minimum_size = Vector2(160, 54)
+	cancel.pressed.connect(_select.bind("Saves & PIN"))
+	_body.add_child(cancel)
+
+
+## A button that imports, then goes back to the Saves tab saying what happened.
+## With `confirm`, the first tap only asks "Really?".
+func _import_button(text: String, color: Color, apply: Callable, confirm := false) -> Button:
+	var b := UI.button(text, color, 20)
+	b.custom_minimum_size = Vector2(240, 54)
+	var armed := [not confirm]
+	b.pressed.connect(func():
+		if not armed[0]:
+			armed[0] = true
+			b.text = "Really replace it?"
+			return
+		Game.save()  # so the playing child's lines are on disk before anything is merged in
+		_notice = apply.call()
+		if Game.state != null:
+			Game.open_voices()
+		_select("Saves & PIN"))
+	return b
+
+
+func _summary_of_pack(pack: Dictionary) -> String:
+	var st: GameState = pack.state
+	return "%d pets, %d hearts, %s, played %s" % [st.pets.size(), st.hearts, _recordings(pack.recordings), st.playtime_text()]

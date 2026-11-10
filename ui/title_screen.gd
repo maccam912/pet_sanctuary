@@ -1,8 +1,10 @@
 class_name TitleScreen
 extends Node3D
 ## Title screen over a live view of the sanctuary, plus the save-slot picker.
+## Each save belongs to one child: a new save (or an old one with no name yet)
+## asks for the child's name first.
 
-signal play_slot(slot: int, is_new: bool)
+signal play_slot(slot: int, is_new: bool, child_name: String)
 
 var _root: Control
 var _card: Control
@@ -119,9 +121,11 @@ func _slot_card(slot: int) -> Control:
 		v.add_child(UI.label("New sanctuary", 26, UI.INK_SOFT))
 		v.add_child(UI.spacer())
 		var start := UI.button("Start", UI.SUN, 32)
-		start.pressed.connect(func(): play_slot.emit(slot, true))
+		start.pressed.connect(ask_name.bind(slot, true))
 		v.add_child(start)
 		return p
+	if st.child_name != "":
+		v.add_child(UI.label(st.child_name, 34, UI.CORAL.darkened(0.2)))
 	var icons := UI.hbox(0)
 	for i in mini(3, st.pets.size()):
 		icons.add_child(UI.pet_picture(st.pets[st.pets.size() - 1 - i], 92))
@@ -137,6 +141,45 @@ func _slot_card(slot: int) -> Control:
 	v.add_child(UI.label("Played " + st.playtime_text(), 22, UI.INK_SOFT))
 	v.add_child(UI.spacer())
 	var play := UI.button("Play", UI.LEAF, 32)
-	play.pressed.connect(func(): play_slot.emit(slot, false))
+	if st.child_name == "":
+		play.pressed.connect(ask_name.bind(slot, false))
+	else:
+		play.pressed.connect(func(): play_slot.emit(slot, false, ""))
 	v.add_child(play)
 	return p
+
+
+## Asks the child's name, then starts (or loads) the save.
+func ask_name(slot: int, is_new: bool) -> void:
+	var holder := UI.full(Control.new())
+	var v := UI.vbox(18)
+	var msg := "Hi! What is your name?"
+	v.add_child(UI.label(msg, 40))
+	var edit := LineEdit.new()
+	edit.max_length = 12
+	edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	edit.add_theme_font_size_override("font_size", 40)
+	edit.custom_minimum_size = Vector2(420, 84)
+	edit.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	v.add_child(edit)
+	var row := UI.hbox(14)
+	var back := UI.button("Back", UI.PAPER, 24)
+	back.custom_minimum_size = Vector2(160, 84)
+	back.pressed.connect(_show_slots)
+	row.add_child(back)
+	var go := UI.button("Let's go!", UI.LEAF, 32)
+	go.custom_minimum_size = Vector2(300, 84)
+	go.disabled = true
+	var start := func():
+		var child_name := GameState.clean_name(edit.text, "")
+		if child_name != "":
+			play_slot.emit(slot, is_new, child_name)
+	go.pressed.connect(start)
+	edit.text_changed.connect(func(t: String): go.disabled = GameState.clean_name(t, "") == "")
+	edit.text_submitted.connect(func(_t): start.call())
+	row.add_child(go)
+	v.add_child(row)
+	holder.add_child(UI.centered(v, Vector2(640, 0)))
+	_set_card(holder)
+	edit.grab_focus.call_deferred()
+	Sfx.say(msg)

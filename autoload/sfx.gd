@@ -20,15 +20,18 @@ var _music_a: AudioStreamPlayer
 var _music_b: AudioStreamPlayer
 var _current_music := ""
 var _streams := {}
-var _voice := ""
+var _voice := ""            # the default read-aloud voice
+var _readers: Array = []    # read-aloud voices a child can pick from (ids)
 var _tts_ok := false
 var _speech := 0            # goes up with every say() / hush(), so old speech stops
 var _tts_done := true
 var _line_player: AudioStreamPlayer    # the child's recorded voice lines
 var _animal_player: AudioStreamPlayer  # the child's recorded animal sounds
-var _mic: AudioStreamPlayer
-var _recorder: AudioEffectRecord
-var _record_bus := -1
+var _mic_on := false
+var _mic_frames := 0        # frames heard since the microphone was switched on
+var _recording := false
+var _take := PackedFloat32Array()
+var _level := 0.0
 ## The end-to-end test switches this off so it never touches the real
 ## microphone (the system's permission question would stop it).
 var use_mic := true
@@ -55,11 +58,47 @@ func _ready() -> void:
 			for v in DisplayServer.tts_get_voices():
 				if str(v.get("name", "")).begins_with("Samantha") and str(v.get("language", "")).begins_with("en"):
 					_voice = v.id
+			_find_readers()
 		else:
 			_tts_ok = false
 	if _tts_ok:
 		for event in [DisplayServer.TTS_UTTERANCE_ENDED, DisplayServer.TTS_UTTERANCE_CANCELED]:
 			DisplayServer.tts_set_utterance_callback(event, _on_tts_end)
+
+
+## Up to six English voices, the default first, then ones with the same accent.
+## Voices that need the internet are left out.
+func _find_readers() -> void:
+	var all := DisplayServer.tts_get_voices().filter(func(v):
+		return str(v.get("language", "")).begins_with("en") and not str(v.id).contains("network"))
+	var lang := ""
+	for v in all:
+		if v.id == _voice:
+			lang = v.language
+	var ordered := []
+	for rank in 3:
+		for v in all:
+			if rank == (0 if v.id == _voice else (1 if v.language == lang else 2)):
+				ordered.append(v)
+	var names := {}
+	for v in ordered:
+		var key := str(v.get("name", v.id)) + str(v.language)
+		if names.has(key) or _readers.size() >= 6:
+			continue
+		names[key] = true
+		_readers.append(v.id)
+
+
+## The read-aloud voices a child can choose from ([] when there is no choice).
+func reader_voices() -> Array:
+	return _readers if _readers.size() > 1 else []
+
+
+## The playing child's read-aloud voice.
+func _reader() -> String:
+	if Game.state != null and Game.state.voice.reader in _readers:
+		return Game.state.voice.reader
+	return _voice
 
 
 func _on_tts_end(id: int) -> void:
@@ -134,14 +173,14 @@ func refresh_volume() -> void:
 func say(text: String) -> void:
 	if text.strip_edges() == "":
 		return
-	var parts := Game.voice.plan(text)
+	var parts := Game.voice.plan(text, Game.listen) if Game.voice else [{"text": text, "stream": null}]
 	if not Game.settings.read_aloud:
 		return
 	hush()
 	var recorded := parts.any(func(p): return p.stream != null)
 	if not recorded and not _animal_player.playing:
 		if _tts_ok:
-			DisplayServer.tts_speak(text, _voice, 80, 1.05, 0.9)
+			DisplayServer.tts_speak(text, _reader(), 80, 1.05, 0.9)
 		return
 	_speak_parts(parts, _speech)
 
@@ -164,7 +203,7 @@ func _speak_parts(parts: Array, ticket: int) -> void:
 					return
 		elif _tts_ok:
 			_tts_done = false
-			DisplayServer.tts_speak(part.text, _voice, 80, 1.05, 0.9, ticket)
+			DisplayServer.tts_speak(part.text, _reader(), 80, 1.05, 0.9, ticket)
 			var patience: float = 3.0 + part.text.length() * 0.12
 			while not _tts_done and patience > 0.0:
 				await get_tree().process_frame
@@ -178,7 +217,7 @@ func _speak_parts(parts: Array, ticket: int) -> void:
 func read(text: String) -> void:
 	hush()
 	if _tts_ok:
-		DisplayServer.tts_speak(text, _voice, 80, 1.05, 0.9)
+		DisplayServer.tts_speak(text, _reader(), 80, 1.05, 0.9)
 
 
 func hush() -> void:
@@ -191,7 +230,7 @@ func hush() -> void:
 ## Plays the child's recorded sound for this animal and feeling. Returns false
 ## (and plays nothing) when there is no recording yet.
 func animal(species: String, emotion := "happy") -> bool:
-	var s := Game.voice.animal_stream(species, emotion)
+	var s := Game.listen.animal_stream(species, emotion) if Game.listen else null
 	if s == null or Game.settings.sfx <= 0.01:
 		return false
 	_animal_player.stream = s
@@ -209,62 +248,85 @@ func playback(stream: AudioStream) -> void:
 
 
 # ------------------------------------------------------- recording ----
+# The microphone is read straight from the audio server's input buffer. Going
+# through an AudioStreamMicrophone player and a record bus instead lets the
+# player's read position drift into old buffer data, which made some takes
+# stutter.
 
 ## Switches the microphone on (only while the recording booth is open).
 func mic_open() -> void:
 	if not use_mic:
 		return
-	if _record_bus < 0:
-		# Microphone -> "Record" bus (captures it) -> silent bus, so it is never
-		# played back out of the speaker while recording.
-		AudioServer.add_bus()
-		var silent := AudioServer.bus_count - 1
-		AudioServer.set_bus_name(silent, "Silent")
-		AudioServer.set_bus_mute(silent, true)
-		AudioServer.add_bus()
-		_record_bus = AudioServer.bus_count - 1
-		AudioServer.set_bus_name(_record_bus, "Record")
-		AudioServer.set_bus_send(_record_bus, "Silent")
-		_recorder = AudioEffectRecord.new()
-		_recorder.format = AudioStreamWAV.FORMAT_16_BITS
-		AudioServer.add_bus_effect(_record_bus, _recorder)
-		_mic = AudioStreamPlayer.new()
-		_mic.stream = AudioStreamMicrophone.new()
-		_mic.bus = "Record"
-		add_child(_mic)
 	if OS.get_name() == "Android":
 		OS.request_permission("android.permission.RECORD_AUDIO")
-	_mic.play()
+	_mic_start()
+
+
+func _mic_start() -> void:
+	# Off first: a start that failed (no permission yet) still counts as on.
+	AudioServer.set_input_device_active(false)
+	_mic_on = AudioServer.set_input_device_active(true) == OK
+	_mic_frames = 0
 
 
 func mic_close() -> void:
-	if _mic:
-		_recorder.set_recording_active(false)
-		_mic.stop()
+	_recording = false
+	_level = 0.0
+	if _mic_on:
+		AudioServer.set_input_device_active(false)
+		_mic_on = false
+
+
+func _process(_delta: float) -> void:
+	if _mic_on:
+		_pull_mic()
+
+
+## Takes everything the microphone has heard since last time: kept while
+## recording, otherwise only used for the level lights.
+func _pull_mic() -> void:
+	var n := mini(AudioServer.get_input_frames_available(), AudioServer.get_input_buffer_length_frames())
+	if n <= 0:
+		return
+	var frames := AudioServer.get_input_frames(n)
+	_mic_frames += frames.size()
+	var peak := 0.0
+	var at := _take.size()
+	if _recording:
+		_take.resize(at + frames.size())
+	for i in frames.size():
+		var v := (frames[i].x + frames[i].y) * 0.5
+		peak = maxf(peak, absf(v))
+		if _recording:
+			_take[at + i] = v
+	_level = clampf((linear_to_db(maxf(peak, 0.00001)) + 50.0) / 45.0, 0.0, 1.0)
 
 
 func record_start() -> void:
 	hush()
 	_animal_player.stop()
-	if _mic == null:
+	if not use_mic:
 		return
-	if not _mic.playing:
-		_mic.play()
-	_recorder.set_recording_active(true)
+	if not _mic_on or _mic_frames == 0:
+		_mic_start()  # maybe the microphone permission has been granted since
+	if _mic_on:
+		_pull_mic()  # throw away what was heard before Record was tapped
+	_take = PackedFloat32Array()
+	_recording = true
 
 
 ## Stops recording and returns the tidied take (null if nothing was heard).
 func record_stop() -> AudioStreamWAV:
-	if _recorder == null or not _recorder.is_recording_active():
+	if not _recording:
 		return null
-	var take := _recorder.get_recording()
-	_recorder.set_recording_active(false)
-	return VoiceStore.clean(take)
+	if _mic_on:
+		_pull_mic()
+	_recording = false
+	var take := _take
+	_take = PackedFloat32Array()
+	return VoiceStore.clean_samples(take, AudioServer.get_input_mix_rate())
 
 
 ## How loud the microphone is right now, 0..1 (for the booth's level lights).
 func mic_level() -> float:
-	if _record_bus < 0:
-		return 0.0
-	var db := maxf(AudioServer.get_bus_peak_volume_left_db(_record_bus, 0), AudioServer.get_bus_peak_volume_right_db(_record_bus, 0))
-	return clampf((db + 50.0) / 45.0, 0.0, 1.0)
+	return _level

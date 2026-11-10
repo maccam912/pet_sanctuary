@@ -144,6 +144,25 @@ func has_line(text: String) -> bool:
 	return has(line_file(text))
 
 
+func count() -> int:
+	return _have.size()
+
+
+func is_empty() -> bool:
+	return _have.is_empty()
+
+
+## Any one recording (a line if there is one), to hear whose voice this is.
+func sample() -> AudioStreamWAV:
+	var files := _have.keys()
+	files.sort_custom(func(a, b): return a.begins_with("line_") and not b.begins_with("line_"))
+	for f in files:
+		var s := stream(f)
+		if s:
+			return s
+	return null
+
+
 ## The child's sound for this animal and feeling, or for a close feeling.
 func animal_stream(species: String, emotion: String) -> AudioStreamWAV:
 	for e in [emotion] + Content.SOUND_FALLBACK.get(emotion, []):
@@ -163,14 +182,16 @@ func animal_count(species: String) -> int:
 
 # ----------------------------------------------------------- speech ----
 
-## Turns text into what to play: [{"text", "stream"}], where `stream` is the
-## child's recording or null for the read-aloud voice. Unrecorded neighbours
-## are joined so the read-aloud voice says them in one go.
-func plan(text: String) -> Array:
+## Turns text into what to play: [{"text", "stream"}], where `stream` is a
+## recording (from this store, or from `from` when the child picked someone
+## else's voice) or null for the read-aloud voice. Unrecorded neighbours are
+## joined so the read-aloud voice says them in one go.
+func plan(text: String, from: VoiceStore = null) -> Array:
+	var source := from if from else self
 	var out := []
 	for line in split(text):
 		note_heard(line)
-		var s := stream(line_file(line))
+		var s := source.stream(line_file(line))
 		if s == null and not out.is_empty() and out[-1].stream == null:
 			out[-1].text += " " + line
 		else:
@@ -228,16 +249,28 @@ func booth_lines(starter: Array, pet_names: Array) -> Array:
 
 # ------------------------------------------------------------ audio ----
 
-## Tidies a fresh microphone take: mono, smaller, silence trimmed from both
-## ends, volume evened out. Returns null when nothing was really recorded.
+## Tidies a 16-bit take (see clean_samples).
 static func clean(take: AudioStreamWAV) -> AudioStreamWAV:
 	if take == null or take.format != AudioStreamWAV.FORMAT_16_BITS:
 		return null
 	var data := take.data
 	var channels := 2 if take.stereo else 1
-	var step := maxi(1, roundi(float(take.mix_rate) / TARGET_RATE))
-	var frame_bytes := 2 * channels
-	var count := data.size() / (frame_bytes * step)
+	var mono := PackedFloat32Array()
+	mono.resize(data.size() / (2 * channels))
+	for i in mono.size():
+		var sum := 0.0
+		for c in channels:
+			sum += data.decode_s16((i * channels + c) * 2)
+		mono[i] = sum / (channels * 32768.0)
+	return clean_samples(mono, take.mix_rate)
+
+
+## Tidies a fresh microphone take (mono samples, -1..1): smaller, silence
+## trimmed from both ends, volume evened out. Returns null when nothing was
+## really recorded.
+static func clean_samples(raw: PackedFloat32Array, mix_rate: float) -> AudioStreamWAV:
+	var step := maxi(1, roundi(mix_rate / TARGET_RATE))
+	var count := raw.size() / step
 	if count < 10:
 		return null
 	var samples := PackedFloat32Array()
@@ -245,15 +278,14 @@ static func clean(take: AudioStreamWAV) -> AudioStreamWAV:
 	var peak := 0.0
 	for i in count:
 		var sum := 0.0
-		var at := i * step * frame_bytes
-		for j in step * channels:
-			sum += data.decode_s16(at + j * 2)
-		var v := sum / (step * channels * 32768.0)
+		for j in step:
+			sum += raw[i * step + j]
+		var v := sum / step
 		samples[i] = v
 		peak = maxf(peak, absf(v))
 	if peak < 0.02:
 		return null
-	var rate := take.mix_rate / step
+	var rate := int(mix_rate) / step
 	var quiet := maxf(0.03, peak * 0.08)
 	var first := 0
 	while first < count and absf(samples[first]) < quiet:

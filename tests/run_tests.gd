@@ -24,6 +24,7 @@ func _init() -> void:
 	test_roster_and_pacing()
 	test_perfectionism()
 	test_voice_store()
+	test_profiles()
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
 
@@ -94,6 +95,15 @@ func test_state_roundtrip() -> void:
 	check(s4.pets[3].name == "Sparklepet", "typed name cleaned and kept")
 	check(s4.has_pet("pig"), "unknown look becomes plain")
 	check(GameState.clean_name("   ", "Maple") == "Maple" and GameState.clean_name("Abcdefghijklmnop", "x").length() == 12, "name limits")
+	# Profile: the child's name, a stable id and their voice choices.
+	check(GameState.valid_profile_id(s.profile_id) and s.profile_id != GameState.new_game().profile_id, "each save gets its own profile id")
+	s.child_name = "Emma"
+	s.voice = {"from": "0123456789abcdef", "reader": "voice.x"}
+	var s5 := GameState.from_dict(JSON.parse_string(JSON.stringify(s.to_dict())))
+	check(s5.child_name == "Emma" and s5.profile_id == s.profile_id, "name and profile id survive")
+	check(s5.voice.from == "0123456789abcdef" and s5.voice.reader == "voice.x", "voice choices survive")
+	var s6 := GameState.from_dict({"profile_id": "../../evil", "voice": {"from": "x/y"}, "child_name": "A\"b"})
+	check(GameState.valid_profile_id(s6.profile_id) and s6.voice.from == "" and s6.child_name == "Ab", "unsafe profile data replaced")
 
 
 func test_director_scenarios() -> void:
@@ -251,8 +261,7 @@ func test_save_store() -> void:
 	store.delete_to_trash(2)
 	store.empty_trash()
 	check(store.list_trash().is_empty(), "trash emptied")
-	DirAccess.remove_absolute(dir + "/trash")
-	DirAccess.remove_absolute(dir)
+	_wipe(dir)
 
 
 func test_adult_gate() -> void:
@@ -343,6 +352,15 @@ func test_voice_store() -> void:
 	for line in Content.voice_script():
 		check(not line.contains("{"), "starter line has no blanks: " + line)
 
+	# Straight from the microphone: mono floats at 44.1 kHz.
+	var mic := PackedFloat32Array()
+	mic.resize(44100)
+	for i in range(13230, 30870):
+		mic[i] = sin(i * TAU * 440.0 / 44100.0) * 0.3
+	var from_mic := VoiceStore.clean_samples(mic, 44100.0)
+	check(from_mic != null and from_mic.mix_rate == 22050 and from_mic.get_length() > 0.4 and from_mic.get_length() < 0.7, "microphone samples become a trimmed take")
+	check(VoiceStore.clean_samples(PackedFloat32Array([0.0, 0.0]), 44100.0) == null, "too short")
+
 	# A fake microphone take: silence, a loud beep, silence (stereo, 48 kHz).
 	var take := _beep(48000, 0.4, 0.5, 0.6)
 	var wav := VoiceStore.clean(take)
@@ -377,8 +395,126 @@ func test_voice_store() -> void:
 	for l in lines:
 		keys[VoiceStore.normalize(l.text)] = true
 	check(keys.size() == lines.size(), "no line listed twice")
+	var other := VoiceStore.new(dir + "_other")
+	check(other.is_empty() and other.sample() == null, "someone with no recordings")
+	var borrowed := other.plan("Which tool shall we use? I can't do it YET.", again)
+	check(borrowed.size() == 2 and borrowed[1].stream != null and other.heard.has("i cant do it yet") and not other.has_line("I can't do it YET."), "play someone else's recordings, remember the line as heard here")
+	check(again.count() == 2 and again.sample() == again.stream(VoiceStore.line_file("I can't do it YET.")), "a sample prefers a line")
+	_wipe(dir + "_other")
 	again.erase(VoiceStore.line_file("I can't do it YET."))
 	check(not again.has_line("I can't do it YET.") and VoiceStore.new(dir).stream(VoiceStore.line_file("I can't do it YET.")) == null, "erase")
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(dir + "/" + f)
+	DirAccess.remove_absolute(dir)
+
+
+func test_profiles() -> void:
+	print("profiles")
+	var wav := VoiceStore.clean(_beep(48000, 0.1, 0.4, 0.1))
+	# Recordings from before profiles: every save gets a copy.
+	var root := "user://test_profiles_%d" % Time.get_ticks_usec()
+	var old := root + "/old_voice"
+	var old_store := VoiceStore.new(old)
+	old_store.save(VoiceStore.animal_file("dog", "happy"), wav)
+	var store := SaveStore.new(root + "/saves")
+	store.adopt_old_recordings(old)
+	check(DirAccess.dir_exists_absolute(old), "old recordings kept while there are no saves")
+	var emma := GameState.new_game()
+	emma.child_name = "Emma"
+	emma.hearts = 33
+	var file := FileAccess.open(store.slot_path(1), FileAccess.WRITE)
+	var old_save := emma.to_dict()
+	old_save.erase("profile_id")
+	file.store_string(JSON.stringify(old_save))
+	file.close()
+	store.save(2, GameState.new_game())
+	store.adopt_old_recordings(old)
+	var id1 := store.load_slot(1).profile_id
+	check(id1 == store.load_slot(1).profile_id and GameState.valid_profile_id(id1), "a save from before profiles always gets the same id")
+	var last_played := store.load_slot(1).last_played
+	store.adopt_old_recordings(old)
+	check(store.load_slot(1).last_played == last_played, "nothing to adopt: saves are left alone")
+	check(VoiceStore.new(store.voice_dir(id1)).animal_count("dog") == 1 and VoiceStore.new(store.voice_dir(store.load_slot(2).profile_id)).animal_count("dog") == 1, "every save got the old recordings")
+	check(not DirAccess.dir_exists_absolute(old), "old folder tidied away")
+	check(store.slot_of_profile(id1) == 1 and store.slot_of_profile("feedfeedfeedfeed") == 0, "find a profile's save")
+	var mine := VoiceStore.new(store.voice_dir(id1))
+	mine.save(VoiceStore.line_file("I can't do it YET."), wav)
+	mine.plan("I can't do it YET.")
+	mine.save_heard()
+
+	# Export Emma, then bring her to a second "tablet".
+	var path := root + "/emma.zip"
+	check(ProfilePack.file_name(store.load_slot(1), 1) == "SunnyPaws-Emma.zip", "file name")
+	check(ProfilePack.export_slot(store, 1, path) == OK and FileAccess.file_exists(path), "export")
+	check(ProfilePack.export_slot(store, 3, path + "x") != OK, "nothing to export in an empty save")
+	var tablet := SaveStore.new(root + "/tablet_b")
+	var pack := ProfilePack.read(path, tablet.base_dir)
+	check(not pack.is_empty() and pack.state.child_name == "Emma" and pack.state.hearts == 33 and pack.recordings == 2, "read the file back")
+	check(ProfilePack.import_profile(tablet, pack, 2), "import into an empty save")
+	var there := tablet.load_slot(2)
+	check(there.child_name == "Emma" and there.profile_id == id1, "same child, same profile")
+	var their_voice := VoiceStore.new(tablet.voice_dir(id1))
+	check(their_voice.has_line("I can't do it YET.") and their_voice.animal_count("dog") == 1 and their_voice.heard.has("i cant do it yet"), "recordings came along")
+
+	# Importing her again elsewhere keeps the two apart; replacing a save recycles it.
+	tablet.save(1, GameState.new_game())
+	check(ProfilePack.import_profile(tablet, ProfilePack.read(path, tablet.base_dir), 1), "replace a save")
+	check(tablet.list_trash().size() == 1, "the replaced save is in the recycle bin")
+	check(tablet.load_slot(1).profile_id != id1 and tablet.load_slot(2).profile_id == id1, "a second copy gets its own profile")
+
+	# Recordings only: added to a child who already has a sanctuary there.
+	var liam := GameState.new_game()
+	liam.hearts = 7
+	tablet.save(3, liam)
+	var liam_voice := VoiceStore.new(tablet.voice_dir(liam.profile_id))
+	liam_voice.save(VoiceStore.animal_file("cat", "mad"), wav)
+	liam_voice.plan("Liam says hello to everyone.")
+	liam_voice.save_heard()
+	ProfilePack.add_recordings(tablet, pack, liam.profile_id)
+	liam_voice = VoiceStore.new(tablet.voice_dir(liam.profile_id))
+	check(liam_voice.animal_count("cat") == 1 and liam_voice.animal_count("dog") == 1 and liam_voice.has_line("I can't do it YET."), "recordings merged, none lost")
+	check(liam_voice.heard.has("liam says hello to everyone") and liam_voice.heard.has("i cant do it yet"), "heard lines merged")
+	check(tablet.load_slot(3).hearts == 7, "recordings only: the sanctuary is untouched")
+
+	# Not a profile, or a file trying to write outside the voice folder.
+	var bad := ZIPPacker.new()
+	bad.open(root + "/bad.zip")
+	bad.start_file("hello.txt")
+	bad.write_file("hi".to_utf8_buffer())
+	bad.close_file()
+	bad.close()
+	check(ProfilePack.read(root + "/bad.zip", root).is_empty(), "a zip that is not a profile")
+	check(ProfilePack.read(root + "/missing.zip", root).is_empty(), "a missing file")
+	var sneaky := ZIPPacker.new()
+	sneaky.open(root + "/sneaky.zip")
+	for entry in ["profile.json", "voice/../../evil.wav", "voice/Line_X.wav", "voice/notes.txt", "voice/line_ok.wav"]:
+		sneaky.start_file(entry)
+		sneaky.write_file((JSON.stringify({"format": 1, "save": GameState.new_game().to_dict()}) if entry == "profile.json" else "x").to_utf8_buffer())
+		sneaky.close_file()
+	sneaky.close()
+	var sp := ProfilePack.read(root + "/sneaky.zip", root)
+	check(sp.files.keys() == ["line_ok.wav"], "only plain recording names are taken")
+	var future := ZIPPacker.new()
+	future.open(root + "/future.zip")
+	future.start_file("profile.json")
+	future.write_file(JSON.stringify({"format": 99, "save": {}}).to_utf8_buffer())
+	future.close_file()
+	future.close()
+	check(ProfilePack.read(root + "/future.zip", root).is_empty(), "a file from a newer version is refused")
+
+	# Emptying the recycle bin forgets the recordings of saves that are gone.
+	var trashed_id := tablet.load_slot(3).profile_id
+	tablet.delete_to_trash(3)
+	check(DirAccess.dir_exists_absolute(tablet.voice_dir(trashed_id)), "a recycled save keeps its recordings")
+	tablet.empty_trash()
+	check(not DirAccess.dir_exists_absolute(tablet.voice_dir(trashed_id)) and DirAccess.dir_exists_absolute(tablet.voice_dir(id1)), "only orphaned recordings are deleted")
+	_wipe(root)
+
+
+## Deletes a test folder and everything in it.
+func _wipe(dir: String) -> void:
+	for sub in DirAccess.get_directories_at(dir):
+		_wipe(dir + "/" + sub)
 	for f in DirAccess.get_files_at(dir):
 		DirAccess.remove_absolute(dir + "/" + f)
 	DirAccess.remove_absolute(dir)

@@ -4,6 +4,12 @@ extends RefCounted
 
 const VERSION := 1
 
+var child_name := ""
+## Never changes; names this child's recordings folder (see SaveStore.voice_dir).
+var profile_id := ""
+## Whose recordings the game plays ("" = this child's own, or another
+## profile's id) and which read-aloud voice reads the rest ("" = the default).
+var voice := {"from": "", "reader": ""}
 var hearts := 0
 var pets: Array = []            # [{species, name, friendship, look}]
 var techniques := {}            # id -> {stage, count}
@@ -39,6 +45,7 @@ var adult := {
 
 static func new_game() -> GameState:
 	var s := GameState.new()
+	s.profile_id = new_profile_id()
 	for sp in Content.STARTER_SPECIES:
 		s.pets.append({"species": sp, "name": Content.SPECIES[sp], "friendship": 0, "look": ""})
 	for id in Content.TECHNIQUE_ORDER:
@@ -53,7 +60,7 @@ static func new_game() -> GameState:
 
 func to_dict() -> Dictionary:
 	return {
-		"version": VERSION, "hearts": hearts, "pets": pets, "techniques": techniques,
+		"version": VERSION, "child_name": child_name, "profile_id": profile_id, "voice": voice, "hearts": hearts, "pets": pets, "techniques": techniques,
 		"recent_scenarios": recent_scenarios, "moments_done": moments_done,
 		"arrivals_done": arrivals_done, "garden": garden,
 		"activity_plays": activity_plays, "last_frustration_play": last_frustration_play,
@@ -65,6 +72,16 @@ func to_dict() -> Dictionary:
 ## Tolerant loader: missing keys keep their defaults so old saves keep working.
 static func from_dict(d: Dictionary) -> GameState:
 	var s := new_game()
+	s.child_name = clean_name(str(d.get("child_name", "")), "")
+	if valid_profile_id(d.get("profile_id")):
+		s.profile_id = d.profile_id
+	elif d.has("created"):
+		# Saved before profiles: the same save always gets the same id.
+		s.profile_id = str(d.created).md5_text().substr(0, 16)
+	var vc = d.get("voice")
+	if vc is Dictionary:
+		s.voice.from = vc.from if valid_profile_id(vc.get("from")) else ""
+		s.voice.reader = str(vc.get("reader", ""))
 	s.hearts = int(d.get("hearts", 0))
 	var loaded_pets := []
 	if d.get("pets") is Array:
@@ -101,6 +118,20 @@ static func from_dict(d: Dictionary) -> GameState:
 	s.adult.frequency = clampi(int(s.adult.frequency), 0, 2)
 	s.adult.session_minutes = int(s.adult.session_minutes)
 	return s
+
+
+static func new_profile_id() -> String:
+	return "%08x%08x" % [randi(), randi()]
+
+
+## Profile ids become folder names, so only accept plain hex.
+static func valid_profile_id(id) -> bool:
+	if not (id is String) or id.length() < 8 or id.length() > 32:
+		return false
+	for ch in id:
+		if not ch in "0123456789abcdef":
+			return false
+	return true
 
 
 func stage_of(tech: String) -> int:
