@@ -76,7 +76,7 @@ func _note(i: int) -> void:
 	var seconds := 0.5
 	var sp: String = players[i].species
 	if Sfx.animal(sp, "happy"):
-		seconds = clampf(Game.voice.animal_stream(sp, "happy").get_length() + 0.1, 0.5, 1.4)
+		seconds = clampf(Game.listen.animal_stream(sp, "happy").get_length() + 0.1, 0.5, 1.4)
 	else:
 		Sfx.play("soft", PITCHES[i])
 	var pad := pads[i]

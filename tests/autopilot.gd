@@ -14,11 +14,7 @@ func _ready() -> void:
 	Game.store = SaveStore.new("user://autopilot_saves")
 	for i in range(1, 4):
 		Game.store.delete_to_trash(i)
-	Game.store.empty_trash()
-	if DirAccess.dir_exists_absolute("user://autopilot_voice"):
-		for f in DirAccess.get_files_at("user://autopilot_voice"):
-			DirAccess.remove_absolute("user://autopilot_voice/" + f)
-	Game.voice = VoiceStore.new("user://autopilot_voice")
+	Game.store.empty_trash()  # also clears the recordings of the deleted saves
 	Game.settings.read_aloud = false
 	Game.settings.music = 0.0
 	Game.settings.sfx = 0.0
@@ -178,10 +174,32 @@ func _run() -> void:
 		if c is SettingsPanel:
 			c.queue_free()
 
-	main._on_play_slot(1, true)
+	# A brother or sister already has a save with one recording.
+	var sibling := GameState.new_game()
+	sibling.child_name = "Sam"
+	Game.store.save(2, sibling)
+	VoiceStore.new(Game.store.voice_dir(sibling.profile_id)).save(VoiceStore.animal_file("dog", "happy"), _fake_take())
+	title.ask_name(1, true)
+	await wait(0.4)
+	await shot("name_prompt")
+	main._on_play_slot(1, true, "Robin")
 	await wait(2.0)
 	var s: Sanctuary = main.current
 	await shot("sanctuary")
+	must(Game.state.child_name == "Robin" and Game.voice.is_empty(), "a new child starts with a name and no recordings")
+	# Settings: hear Sam's recordings instead, then go back to mine.
+	s._open_settings()
+	await wait(0.4)
+	var settings: SettingsPanel = s._overlays.get_child(0)
+	await shot("settings_voices")
+	var voice_buttons := _buttons(settings).filter(func(b): return b.text in ["Mine", "Sam"])
+	must(voice_buttons.size() == 2, "whose-voice choice lists the sibling")
+	voice_buttons[1].pressed.emit()
+	must(Game.listen.animal_stream("dog", "happy") != null and Game.voice.animal_stream("dog", "happy") == null, "hear the sibling's recordings, keep your own")
+	voice_buttons[0].pressed.emit()
+	must(Game.listen == Game.voice and Game.state.voice.from == "", "back to my own voice")
+	settings.queue_free()
+	await wait(0.3)
 	# Real input: drag pans the camera, a tap on a pet selects it, one click = one press.
 	if real_input:
 		var before := s.cam_target
@@ -483,6 +501,27 @@ func _run() -> void:
 	await wait(0.4)
 	must(Game.state.pets[1].name == "Captain", "pet renamed in the grown-ups menu")
 	await shot("adult_pets_after")
+	# Move Robin to "another tablet": export, then import into the other saves.
+	var zip_path := Game.store.base_dir + "/robin.zip"
+	must(ProfilePack.export_slot(Game.store, 1, zip_path) == OK, "export a save")
+	var pack := ProfilePack.read(zip_path, Game.store.base_dir)
+	must(not pack.is_empty() and pack.recordings == 2, "read the export back")
+	menu.show_import(pack)
+	await wait(0.3)
+	await shot("adult_import")
+	var add_buttons := _buttons(menu).filter(func(b): return b.text == "Add only the recordings")
+	must(add_buttons.size() == 2, "the save in use can only take recordings")
+	add_buttons[1].pressed.emit()
+	await wait(0.3)
+	must(VoiceStore.new(Game.store.voice_dir(sibling.profile_id)).count() == 3 and Game.store.load_slot(2).child_name == "Sam", "recordings added to Sam, sanctuary kept")
+	menu.show_import(pack)
+	await wait(0.3)
+	_buttons(menu).filter(func(b): return b.text == "Put it here")[0].pressed.emit()
+	await wait(0.3)
+	await shot("adult_imported")
+	var copy := Game.store.load_slot(3)
+	must(copy != null and copy.child_name == "Robin" and copy.profile_id != Game.state.profile_id, "imported into a free save as its own profile")
+	must(VoiceStore.new(Game.store.voice_dir(copy.profile_id)).count() == 2, "with the recordings")
 	menu.queue_free()
 	await wait(0.1)
 	s._meet_new_pets()

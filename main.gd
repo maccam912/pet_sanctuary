@@ -29,11 +29,13 @@ func show_title() -> void:
 	_swap(t)
 
 
-func _on_play_slot(slot: int, is_new: bool) -> void:
+func _on_play_slot(slot: int, is_new: bool, child_name := "") -> void:
 	if is_new:
-		Game.new_game(slot)
+		Game.new_game(slot, child_name)
 	elif not Game.load_game(slot):
 		return
+	elif child_name != "":
+		Game.state.child_name = child_name
 	var s := Sanctuary.new()
 	s.quit_to_title.connect(show_title)
 	_swap(s)
