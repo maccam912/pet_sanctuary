@@ -151,6 +151,17 @@ func _run() -> void:
 	await wait(1.5)
 	await shot("title")
 	var title: TitleScreen = main.current
+	# A newer build is out: the title offers it and the grown-ups panel explains it.
+	Updates.available = {"build": 99, "name": "SunnyPaws-build-99-android.apk", "url": "", "size": 31457280, "sha256": "", "page": ""}
+	Updates.found.emit(Updates.available)
+	must(_buttons(title._title_card).any(func(b): return b.text == "New version!"), "title offers the update")
+	var update := UpdatePanel.new(true)
+	title._root.add_child(update)
+	await wait(0.4)
+	await shot("update")
+	must(_buttons(update).any(func(b): return b.text == "Update"), "update panel can start the download")
+	update.queue_free()
+	Updates.available = {}
 	# Real input: click the Play button with a synthetic mouse click.
 	# (Headless has no real window, so input checks only run windowed.)
 	var real_input := DisplayServer.get_name() != "headless"

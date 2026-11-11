@@ -8,6 +8,7 @@ signal play_slot(slot: int, is_new: bool, child_name: String)
 
 var _root: Control
 var _card: Control
+var _title_card: Control
 var _cam: Camera3D
 var _t := 0.0
 
@@ -33,6 +34,7 @@ func _ready() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_root)
 	Sfx.music("title")
+	Updates.found.connect(_on_update_found)
 	_show_title_card()
 
 
@@ -79,8 +81,39 @@ func _show_title_card() -> void:
 	gear.position = Vector2(-108, 24)
 	gear.pressed.connect(_open_settings)
 	holder.add_child(gear)
+	var build := UpdateCheck.this_build()
+	if build > 0:
+		var ver := UI.label("Build %d" % build, 20, UI.INK_SOFT)
+		ver.add_theme_color_override("font_outline_color", UI.CREAM)
+		ver.add_theme_constant_override("outline_size", 6)
+		ver.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+		ver.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		ver.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		ver.offset_left = -20
+		ver.offset_right = -20
+		ver.offset_top = -14
+		ver.offset_bottom = -14
+		holder.add_child(ver)
+	_title_card = holder
+	if not Updates.available.is_empty():
+		_add_update_button(holder)
 	_set_card(holder)
 	UI.pop(play)
+
+
+func _on_update_found(_info: Dictionary) -> void:
+	if _card == _title_card:
+		_add_update_button(_title_card)
+
+
+## A newer build is on GitHub: a grown-up can install it from here.
+func _add_update_button(holder: Control) -> void:
+	var b := UI.button("New version!", UI.SUN, 26)
+	b.custom_minimum_size = Vector2(230, 84)
+	b.position = Vector2(24, 24)
+	b.pressed.connect(func(): AdultGateDialog.ask(_root, func(): _root.add_child(UpdatePanel.new())))
+	holder.add_child(b)
+	UI.pop(b)
 
 
 func _open_settings() -> void:

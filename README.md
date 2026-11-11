@@ -217,6 +217,15 @@ secrets: `ANDROID_KEYSTORE_BASE64` (the keystore file, base64-encoded),
 `ANDROID_KEYSTORE_ALIAS` and `ANDROID_KEYSTORE_PASSWORD`. Without them the
 workflow still builds, but signs with a throwaway key each time.
 
+**Updates.** CI stamps the build number into `config/version` ("1.0.<number>").
+When the game starts it asks GitHub for the latest release
+(`autoload/updates.gd`), and if that is a newer build the title screen shows a
+"New version!" button behind the grown-ups gate. On Android the game downloads
+the APK into `user://updates/`, checks its size and SHA-256 against the
+release, and opens Android's installer; the first time, Android asks to allow
+installs from Sunny Paws ("Install unknown apps"). On a computer the button
+opens the release page. Local exports keep version "1.0" and never check.
+
 Local export: presets live in `export_presets.cfg` (Android, Windows, Linux,
 macOS), for example `godot --headless --export-release Android build/android/SunnyPaws.apk`.
 

@@ -85,7 +85,9 @@ jobs:
           grep -q "AUTOPILOT OK" /tmp/autopilot.log
 
       - name: Stamp the build number
+        # The game reads its build number from config/version to look for updates.
         run: |
+          sed -i "s|^config/version=.*|config/version=\"1.0.${{ github.run_number }}\"|" project.godot
           sed -i "s|^version/code=.*|version/code=${{ github.run_number }}|" export_presets.cfg
           sed -i "s|^version/name=.*|version/name=\"1.0.${{ github.run_number }}\"|" export_presets.cfg
           sed -i "s|^application/short_version=.*|application/short_version=\"1.0.${{ github.run_number }}\"|" export_presets.cfg
@@ -159,7 +161,7 @@ jobs:
           body: |
             Automatic build of commit ${{ github.sha }}.
 
-            - **Android tablet/phone:** install the `.apk` (allow installs from your browser or files app). It installs over older builds and keeps saves.
+            - **Android tablet/phone:** install the `.apk` (allow installs from your browser or files app). It installs over older builds and keeps saves. After that the game offers each new build on its title screen and installs it itself.
             - **Windows:** unzip and run `SunnyPaws.exe`.
             - **Linux:** extract and run `SunnyPaws.x86_64`.
             - **macOS:** unzip, then right-click the app and choose Open the first time (it is not notarized).

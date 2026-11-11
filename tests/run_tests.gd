@@ -21,6 +21,7 @@ func _init() -> void:
 	test_full_playthrough()
 	test_save_store()
 	test_adult_gate()
+	test_updates()
 	test_roster_and_pacing()
 	test_grown_up_pets()
 	test_perfectionism()
@@ -277,6 +278,35 @@ func test_adult_gate() -> void:
 	check(AdultGate.check_pin(h, "4821") and not AdultGate.check_pin(h, "0000"), "pin check")
 	check(not AdultGate.check_pin("", "0000"), "no pin set")
 	check(AdultGate.valid_pin("1234") and not AdultGate.valid_pin("12a4") and not AdultGate.valid_pin("123"), "pin format")
+
+
+func test_updates() -> void:
+	print("updates")
+	check(UpdateCheck.build_number("1.0.42") == 42, "CI version gives its build number")
+	check(UpdateCheck.build_number("1.0") == 0 and UpdateCheck.build_number("") == 0 and UpdateCheck.build_number("1.0.x") == 0, "local builds are build 0")
+	# Shaped like GitHub's "latest release" reply (numbers come back as floats).
+	var json := """{"tag_name": "build-7", "html_url": "https://example.com/build-7", "draft": false, "prerelease": false,
+		"assets": [
+			{"name": "SunnyPaws-build-7-linux.tar.gz", "size": 10, "state": "uploaded", "browser_download_url": "https://example.com/linux", "digest": "sha256:aa"},
+			{"name": "SunnyPaws-build-7-android.apk", "size": 30081295, "state": "uploaded", "browser_download_url": "https://example.com/apk", "digest": "sha256:bb"}]}"""
+	var release: Dictionary = JSON.parse_string(json)
+	var apk := UpdateCheck.newer(release, 6, UpdateCheck.asset_suffix("Android"))
+	check(apk.get("build") == 7 and apk.get("url") == "https://example.com/apk" and apk.get("name") == "SunnyPaws-build-7-android.apk", "a newer build offers its APK")
+	check(apk.get("size") == 30081295 and apk.get("sha256") == "bb" and apk.get("page") == "https://example.com/build-7", "with its size, checksum and page")
+	check(UpdateCheck.newer(release, 6, UpdateCheck.asset_suffix("Linux")).get("url") == "https://example.com/linux", "each platform gets its own file")
+	check(UpdateCheck.newer(release, 7, ".apk").is_empty() and UpdateCheck.newer(release, 8, ".apk").is_empty(), "same or older build: no update")
+	check(UpdateCheck.newer(release, 0, ".apk").is_empty(), "local builds never update")
+	check(UpdateCheck.newer(release, 6, UpdateCheck.asset_suffix("Windows")).is_empty(), "no file for this platform: no update")
+	check(UpdateCheck.newer(release, 6, UpdateCheck.asset_suffix("Web")).is_empty(), "unknown platform: no update")
+	var pre := release.duplicate(true)
+	pre.prerelease = true
+	check(UpdateCheck.newer(pre, 6, ".apk").is_empty(), "prereleases are skipped")
+	var uploading := release.duplicate(true)
+	uploading.assets[1].state = "open"
+	check(UpdateCheck.newer(uploading, 6, ".apk").is_empty(), "a file still uploading is skipped")
+	var odd := release.duplicate(true)
+	odd.tag_name = "v7"
+	check(UpdateCheck.newer(odd, 6, ".apk").is_empty(), "tags that are not build-N are skipped")
 
 
 func test_roster_and_pacing() -> void:
