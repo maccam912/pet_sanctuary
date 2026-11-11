@@ -70,8 +70,23 @@ static func theme() -> Theme:
 	t.set_stylebox("background", "ProgressBar", _bar(PAPER.darkened(0.1)))
 	t.set_stylebox("fill", "ProgressBar", _bar(LEAF))
 	t.set_stylebox("panel", "ScrollContainer", StyleBoxEmpty.new())
+	t.set_stylebox("scroll", "VScrollBar", _scroll_bar(PAPER.darkened(0.06)))
+	t.set_stylebox("scroll_focus", "VScrollBar", _scroll_bar(PAPER.darkened(0.06)))
+	t.set_stylebox("grabber", "VScrollBar", _scroll_bar(LEAF))
+	t.set_stylebox("grabber_highlight", "VScrollBar", _scroll_bar(LEAF.lightened(0.1)))
+	t.set_stylebox("grabber_pressed", "VScrollBar", _scroll_bar(LEAF.darkened(0.1)))
 	_theme = t
 	return t
+
+
+## A scroll bar wide enough for a finger to find.
+static func _scroll_bar(c: Color) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = c
+	sb.set_corner_radius_all(9)
+	sb.content_margin_left = 9
+	sb.content_margin_right = 9
+	return sb
 
 
 static func _bar(c: Color) -> StyleBoxFlat:

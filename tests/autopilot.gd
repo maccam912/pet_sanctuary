@@ -412,6 +412,8 @@ func _run() -> void:
 	s._on_station("booth")
 	await wait(0.6)
 	var booth: RecordingBooth = s._overlays.get_child(0)
+	var first_name: String = Game.state.pets[0].name
+	must(booth._animal_list.find_children("*", "Label", true, false).any(func(l): return first_name in l.text), "booth lists the pets by name")
 	booth.pick_feeling("mad")
 	await shot("booth_animals")
 	booth.bar.finish_take(_fake_take())

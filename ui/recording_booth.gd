@@ -19,6 +19,8 @@ var _tab_buttons := {}
 var _body: Control
 var _animal_list: VBoxContainer
 var _animal_buttons := {}
+var _animal_counts := {}
+var _pet_names := {}        # species -> names of the child's pets of that kind
 var _animal_side: VBoxContainer
 var _feeling_buttons := {}
 var _line_text: Label
@@ -97,49 +99,92 @@ func _build_animals() -> void:
 	UI.full(row)
 	_body.add_child(row)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(250, 0)
+	scroll.custom_minimum_size = Vector2(280, 0)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_animal_list = UI.vbox(8)
 	_animal_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_animal_list)
 	row.add_child(scroll)
 	_animal_buttons.clear()
-	var first := ""
+	_animal_counts.clear()
+	_pet_names.clear()
+	# One sound covers every pet of a kind, so each kind lists all their names.
+	var first_pet := {}
 	for pet in Game.state.pets:
-		var sp: String = pet.species
-		if _animal_buttons.has(sp):
-			continue
-		if first == "":
-			first = sp
-		var b := UI.button("", UI.PAPER, 24)
-		b.custom_minimum_size = Vector2(230, 92)
-		b.alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		var icon := UI.pet_icon(sp, 72)
-		icon.position = Vector2(12, 4)
-		icon.size = Vector2(72, 72)
-		b.add_child(icon)
-		b.pressed.connect(pick_animal.bind(sp))
-		_animal_list.add_child(b)
-		_animal_buttons[sp] = b
+		if not _pet_names.has(pet.species):
+			_pet_names[pet.species] = []
+			first_pet[pet.species] = pet
+		_pet_names[pet.species].append(pet.name)
+	for sp in _pet_names:
+		_animal_list.add_child(_animal_button(sp, first_pet[sp]))
 	_animal_side = UI.vbox(10)
 	_animal_side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_animal_side.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_child(_animal_side)
+	var first: String = _pet_names.keys()[0] if not _pet_names.is_empty() else ""
 	pick_animal(species if _animal_buttons.has(species) else first)
+	# Coming back from Voice Lines, the picked animal may be far down the list.
+	await get_tree().process_frame
+	if is_instance_valid(scroll) and _animal_buttons.has(species):
+		scroll.ensure_control_visible(_animal_buttons[species])
+
+
+## A row in the animal list: picture, pet names (which can wrap onto more
+## lines) and how many feelings have a sound. The button sits underneath.
+func _animal_button(sp: String, pet: Dictionary) -> Control:
+	var item := MarginContainer.new()
+	var b := UI.button("", UI.PAPER, 24)
+	b.custom_minimum_size = Vector2(230, 92)
+	b.pressed.connect(pick_animal.bind(sp))
+	item.add_child(b)
+	_animal_buttons[sp] = b
+	var m := MarginContainer.new()
+	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for side in ["left", "right", "top", "bottom"]:
+		m.add_theme_constant_override("margin_" + side, 10)
+	m.add_theme_constant_override("margin_bottom", 16)  # clear the button's lip
+	item.add_child(m)
+	var row := UI.hbox(10)
+	row.alignment = BoxContainer.ALIGNMENT_BEGIN
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	m.add_child(row)
+	var icon := UI.pet_picture(pet, 72)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(icon)
+	var words := UI.vbox(0)
+	words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	words.alignment = BoxContainer.ALIGNMENT_CENTER
+	words.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(words)
+	words.add_child(UI.text(_join(_pet_names[sp]), 24, UI.INK, false))
+	var count := UI.label("", 18, UI.INK_SOFT, false)
+	words.add_child(count)
+	_animal_counts[sp] = count
+	return item
+
+
+## "Biscuit", "Biscuit and Rex", "Biscuit, Rex and Pip".
+static func _join(names: Array) -> String:
+	if names.size() < 2:
+		return "".join(PackedStringArray(names))
+	return ", ".join(PackedStringArray(names.slice(0, -1))) + " and " + names[-1]
 
 
 func pick_animal(sp: String) -> void:
 	species = sp
 	for s in _animal_buttons:
 		UI.recolor(_animal_buttons[s], UI.SUN if s == sp else UI.PAPER)
-		_animal_buttons[s].text = "%d of %d  " % [Game.voice.animal_count(s), SOUND_FEELINGS.size()]
+		_animal_counts[s].text = "%d of %d" % [Game.voice.animal_count(s), SOUND_FEELINGS.size()]
 	if bar.get_parent():
 		bar.get_parent().remove_child(bar)
 	for c in _animal_side.get_children():
 		c.queue_free()
 	var top := UI.hbox(14)
 	top.add_child(PetStage.new(sp, 190))
-	var ask := UI.text("What does this animal sound like when it feels...", 28, UI.INK, false)
+	var names: Array = _pet_names.get(sp, [])
+	var question := "What does %s sound like when it feels..." if names.size() < 2 \
+		else "What do %s sound like when they feel..."
+	var ask := UI.text(question % (_join(names) if names else "this animal"), 28, UI.INK, false)
 	ask.custom_minimum_size = Vector2(420, 0)
 	top.add_child(ask)
 	_animal_side.add_child(top)
@@ -187,8 +232,8 @@ func _refresh_feelings() -> void:
 		var b: Button = _feeling_buttons[e]
 		UI.recolor(b, Content.EMOTIONS[e].color.lightened(0.3) if e == feeling else UI.PAPER)
 		(b.get_meta("check") as Doodle).visible = Game.voice.has(VoiceStore.animal_file(species, e))
-	if _animal_buttons.has(species):
-		_animal_buttons[species].text = "%d of %d  " % [Game.voice.animal_count(species), SOUND_FEELINGS.size()]
+	if _animal_counts.has(species):
+		_animal_counts[species].text = "%d of %d" % [Game.voice.animal_count(species), SOUND_FEELINGS.size()]
 
 
 # ------------------------------------------------------ voice lines ----
