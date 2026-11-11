@@ -209,6 +209,19 @@ static func centered(content: Control, min_size := Vector2(720, 0)) -> CenterCon
 	return cc
 
 
+## A big, centred box for typing a pet's name.
+static func name_edit(pet_name: String) -> LineEdit:
+	var e := LineEdit.new()
+	e.text = pet_name
+	e.max_length = 12
+	e.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	e.add_theme_font_size_override("font_size", 40)
+	e.custom_minimum_size = Vector2(420, 84)
+	e.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	e.select_all_on_focus = true
+	return e
+
+
 static func pet_icon(species: String, size := 96, look := "") -> TextureRect:
 	var t := picture("res://assets/pet_icons/animal-%s.png" % species, size)
 	t.material = PetLook.icon_material(look)

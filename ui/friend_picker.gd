@@ -71,14 +71,7 @@ func choose(index: int) -> void:
 	v.add_child(stage)
 	var msg := "What is your new friend's name?"
 	v.add_child(UI.label(msg, 32))
-	_name_edit = LineEdit.new()
-	_name_edit.text = offer.name
-	_name_edit.max_length = 12
-	_name_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_name_edit.add_theme_font_size_override("font_size", 40)
-	_name_edit.custom_minimum_size = Vector2(420, 84)
-	_name_edit.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_name_edit.select_all_on_focus = true
+	_name_edit = UI.name_edit(offer.name)
 	v.add_child(_name_edit)
 	v.add_child(UI.label("Tap the name to change it.", 20, UI.INK_SOFT))
 	var row := UI.hbox(14)

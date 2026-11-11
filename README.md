@@ -23,7 +23,8 @@ Controls: tap things. Slide to look around, pinch (or mouse wheel) to zoom.
 - Earns hearts, which welcome new pets. The child picks each new friend from
   three animals and names it. There are 96 to collect (24 animals, each in
   four colours), and every friend costs more hearts than the last (30, 45,
-  60... up to 150), so a new arrival stays an event.
+  60... up to 150), so a new arrival stays an event. Any pet can be renamed
+  at any time with the pencil next to its name on the pet card.
 - Gives the game its voice in the **Recording Booth**: an animal sound for
   each animal and feeling, and the game's own lines (see below).
 - Has their own profile: each save belongs to one child, asks their name the
@@ -137,6 +138,9 @@ Settings (gear) -> Grown-ups. Guarded by a multiplication question, or a
   which feelings to include, the "how about you?" check-in, play-time reminder.
 - **Progress** - practice counts, first-try accuracy, tool-vs-urge choices,
   and the child's own feeling check-ins.
+- **Pets** - rename any pet, and add any animal in any colour straight away,
+  for free (so the child can start with favourites). Added pets walk in when
+  the menu closes and count toward the heart cost of the next earned friend.
 - **Saves & PIN** - three save slots, each with the child's name (rename
   here). Deleting is only possible here, and a deleted save goes to a recycle
   bin it can be restored from (with its recordings; emptying the bin deletes

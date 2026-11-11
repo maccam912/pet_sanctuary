@@ -109,6 +109,13 @@ func _draw() -> void:
 				draw_rect(Rect2(-r * 0.08, -r, r * 0.16, r * 0.3), col)
 			draw_set_transform(Vector2.ZERO)
 			draw_circle(c, r * 0.6, col)
+		"pencil":
+			draw_set_transform(c, PI / 4.0)
+			draw_rect(Rect2(-r * 0.2, -r * 0.95, r * 0.4, r * 0.24), UI.PINK)
+			draw_rect(Rect2(-r * 0.2, -r * 0.71, r * 0.4, r * 1.06), _col(UI.SUN))
+			draw_colored_polygon(PackedVector2Array([Vector2(-r * 0.2, r * 0.35), Vector2(r * 0.2, r * 0.35), Vector2(0, r * 0.95)]), Color("e8c9a0"))
+			draw_colored_polygon(PackedVector2Array([Vector2(-r * 0.07, r * 0.75), Vector2(r * 0.07, r * 0.75), Vector2(0, r * 0.95)]), UI.INK)
+			draw_set_transform(Vector2.ZERO)
 		"x":
 			var col := _col(UI.INK)
 			draw_line(c + Vector2(-r, -r) * 0.6, c + Vector2(r, r) * 0.6, col, r * 0.26, true)

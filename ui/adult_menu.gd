@@ -96,6 +96,7 @@ func _ready() -> void:
 	if Game.state != null:
 		_add_tab("Skills", _show_skills)
 		_add_tab("Child Settings", _show_child_settings)
+		_add_tab("Pets", _show_pets)
 		_add_tab("Progress", _show_progress)
 	_add_tab("Saves & PIN", _show_saves)
 	_select("Guide" if Game.state == null else "Skills")
@@ -195,6 +196,108 @@ func _show_child_settings() -> void:
 			UI.recolor(b, UI.SUN if s.focus_enabled(e) else UI.PAPER))
 		focus_row.add_child(b)
 	_setting("Feelings to include", "Yellow feelings show up in pet stories. Switch one off to leave it out for now.", focus_row)
+
+
+func _show_pets() -> void:
+	var s := Game.state
+	_text("Rename any pet here. Your child can also rename a pet any time with the pencil on its card.", 20, UI.INK_SOFT)
+	_text("Your pets (%d)" % s.pets.size(), 26)
+	var mine := _grid(3)
+	for p in s.pets:
+		var row := UI.hbox(10)
+		row.add_child(UI.pet_picture(p, 56))
+		var n := UI.label(p.name, 22, UI.INK, false)
+		n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		n.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		row.add_child(n)
+		var rename := UI.button("Rename", UI.SKY, 18)
+		rename.custom_minimum_size = Vector2(110, 50)
+		rename.pressed.connect(_rename.bind(p))
+		row.add_child(rename)
+		mine.add_child(_cell(row))
+	if s.roster_left() == 0:
+		_text("Every pet has moved in!", 22)
+		return
+	_text("Add pets", 26)
+	_text("Tap any animal to add it right away, for free, so your child can start with the ones they love. Added pets count as friends earned with hearts: the next one your child earns costs %d hearts." % s.arrival_cost(), 20, UI.INK_SOFT)
+	var all := _grid(2)
+	for sp in Content.SPECIES:
+		var row := UI.hbox(8)
+		for look in [""] + Content.LOOK_ORDER:
+			var b := UI.button("", UI.CREAM)
+			b.custom_minimum_size = Vector2(100, 100)
+			var icon := UI.pet_icon(sp, 72, look)
+			icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			icon.offset_left = 12
+			icon.offset_right = -12
+			icon.offset_top = 8
+			icon.offset_bottom = -16
+			b.add_child(icon)
+			if s.has_pet(sp, look):
+				b.disabled = true
+				var tick := Doodle.new()
+				tick.kind = "check"
+				tick.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+				tick.offset_left = -34
+				tick.offset_bottom = 30
+				b.add_child(tick)
+			else:
+				b.pressed.connect(_add_pet.bind(sp, look))
+			row.add_child(b)
+		all.add_child(_cell(row))
+
+
+func _grid(columns: int) -> GridContainer:
+	var g := GridContainer.new()
+	g.columns = columns
+	g.add_theme_constant_override("h_separation", 10)
+	g.add_theme_constant_override("v_separation", 10)
+	g.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_body.add_child(g)
+	return g
+
+
+func _cell(content: Control) -> PanelContainer:
+	var box := UI.panel(UI.PAPER, 22)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_child(content)
+	return box
+
+
+func _rename(p: Dictionary) -> void:
+	var namer := PetNamer.new(p, "What should we call %s?" % p.name)
+	add_child(namer)
+	var pet_name: String = await namer.done
+	if pet_name != "":
+		p.name = pet_name
+		Game.save()
+		_refresh_pets()
+
+
+## A grown-up picks a pet for the child; it joins straight away, no hearts spent.
+func _add_pet(sp: String, look: String) -> void:
+	var s := Game.state
+	var names: Array = Content.EXTRA_NAMES.duplicate()
+	names.shuffle()
+	var namer := PetNamer.new({"species": sp, "look": look, "name": Director.fresh_name(s, sp, look, names)},
+		"What is your new friend's name?", "Welcome!")
+	add_child(namer)
+	var pet_name: String = await namer.done
+	if pet_name == "" or s.has_pet(sp, look):
+		return
+	s.add_pet(sp, look, pet_name)
+	Game.save()
+	_refresh_pets()
+
+
+## Rebuilds the Pets tab without jumping back to the top.
+func _refresh_pets() -> void:
+	var scroll := _body.get_parent() as ScrollContainer
+	var at := scroll.scroll_vertical
+	_select("Pets")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	scroll.scroll_vertical = at
 
 
 func _show_progress() -> void:

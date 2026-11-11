@@ -22,6 +22,7 @@ func _init() -> void:
 	test_save_store()
 	test_adult_gate()
 	test_roster_and_pacing()
+	test_grown_up_pets()
 	test_perfectionism()
 	test_voice_store()
 	test_profiles()
@@ -308,6 +309,25 @@ func test_roster_and_pacing() -> void:
 	# Early offers are mostly everyday animals with one special colour.
 	var offers0 := Director.arrival_offers(GameState.new_game())
 	check(offers0.filter(func(o): return o.look == "").size() == 2, "two everyday animals, one special")
+
+
+func test_grown_up_pets() -> void:
+	print("grown-up pets and names")
+	var s := GameState.new_game()
+	var names := ["Pip", "Sunny"]
+	check(Director.fresh_name(s, "fox", "", names) == "Maple", "everyday pet keeps its own name")
+	check(Director.fresh_name(s, "fox", "rose", names) == "Pip", "special colour gets a spare name")
+	check(Director.fresh_name(s, "fox", "rose", names, ["Pip"]) == "Sunny", "skips names already offered")
+	s.pets[0].name = "Maple"
+	check(Director.fresh_name(s, "fox", "", names) == "Pip", "own name taken, so a spare one")
+	# A grown-up adds a pet and a pet is renamed; both survive saving.
+	s.add_pet("panda", "mint", "Jade")
+	s.pets[2].name = GameState.clean_name("Hoppy", s.pets[2].name)
+	var s2 := GameState.from_dict(JSON.parse_string(JSON.stringify(s.to_dict())))
+	check(s2.has_pet("panda", "mint") and s2.pets[3].name == "Jade", "added pet kept")
+	check(s2.pets[2].name == "Hoppy", "new name kept")
+	check(s2.arrival_cost() == 45, "added pets count toward the next friend's cost")
+	check(not Director.arrival_offers(s2).any(func(o): return o.species == "panda" and o.look == "mint"), "added pet is not offered again")
 
 
 func test_perfectionism() -> void:
